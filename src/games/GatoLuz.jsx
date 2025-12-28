@@ -260,7 +260,7 @@ export default function App() {
           </div>
         </div>
         <p className="text-gray-400 text-sm mt-2">
-          Mantén <span className="bg-gray-700 px-2 py-0.5 rounded text-white">ESPACIO</span> para rasguñar. ¡Detente si te toca la luz!
+          Mantén <span className="bg-gray-700 px-2 py-0.5 rounded text-white">ESPACIO</span> o toca la pantalla para rasguñar. ¡Detente si te toca la luz!
         </p>
       </div>
 
@@ -268,11 +268,15 @@ export default function App() {
       <div className="relative rounded-xl overflow-hidden shadow-2xl border-4 border-gray-700" style={{ width: '100%', maxWidth: '800px', aspectRatio: '4/3' }}>
         
         {/* El Canvas del Juego */}
-        <canvas 
-          ref={canvasRef} 
-          width={GAME_WIDTH} 
+        <canvas
+          ref={canvasRef}
+          width={GAME_WIDTH}
           height={GAME_HEIGHT}
           className="w-full h-full block bg-[#2d2a32]"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onMouseDown={handleTouchStart}
+          onMouseUp={handleTouchEnd}
         />
 
         {/* OVERLAYS UI */}
