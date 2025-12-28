@@ -333,23 +333,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Controles Táctiles (Solo visible si no hay teclado o para ayuda visual) */}
-        {gameState === 'playing' && (
-          <div className="absolute bottom-4 right-4 md:hidden">
-            <button
-              className={`w-24 h-24 rounded-full border-4 font-bold text-white shadow-lg flex items-center justify-center transition-all ${
-                isScratchingRef.current ? 'bg-orange-600 border-orange-300 scale-95' : 'bg-orange-500/50 border-white/50'
-              }`}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              onMouseDown={handleTouchStart}
-              onMouseUp={handleTouchEnd}
-              onMouseLeave={handleTouchEnd}
-            >
-              ⚡ RASGUÑAR
-            </button>
-          </div>
-        )}
 
       </div>
       
