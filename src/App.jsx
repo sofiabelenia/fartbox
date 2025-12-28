@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import GameMenu from './components/GameMenu';
 import GatoLuz from './games/GatoLuz';
+import PerritoGame from './games/PerritoGame';
+import RoboGame from './games/RoboGame';
 
 const games = [
   {
@@ -10,6 +12,24 @@ const games = [
     emoji: '🐱',
     color: 'from-orange-500 to-yellow-500',
     component: GatoLuz,
+    type: 'react'
+  },
+  {
+    id: 'perrito-react',
+    title: 'La Cena del Perrito',
+    description: 'Alimenta al perrito encontrando la comida correcta',
+    emoji: '🐶',
+    color: 'from-amber-500 to-orange-500',
+    component: PerritoGame,
+    type: 'react'
+  },
+  {
+    id: 'robo',
+    title: 'Robo Perfecto',
+    description: 'Memoriza y roba el botín sin ser atrapado',
+    emoji: '💎',
+    color: 'from-slate-600 to-slate-800',
+    component: RoboGame,
     type: 'react'
   },
   {
@@ -38,15 +58,6 @@ const games = [
     color: 'from-pink-500 to-rose-500',
     type: 'html',
     path: '/galletas.html'
-  },
-  {
-    id: 'perrito',
-    title: 'La Cena del Perrito',
-    description: 'Alimenta al perrito hambriento',
-    emoji: '🐶',
-    color: 'from-amber-500 to-orange-500',
-    type: 'html',
-    path: '/perrito-standalone.html'
   },
   {
     id: 'saltar',
