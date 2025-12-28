@@ -283,16 +283,17 @@ export default function App() {
         
         {/* Menu Principal */}
         {gameState === 'menu' && (
-          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-10 p-6 text-center">
-            <div className="text-6xl mb-4">🛋️⚡🐱</div>
-            <h2 className="text-4xl font-extrabold text-orange-400 mb-6">¿Listo para destruir?</h2>
-            <p className="text-xl mb-8 max-w-md">
-              Rasguña el sofá cuando no haya moros en la costa. 
+          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-10 p-4 md:p-6 text-center pointer-events-auto">
+            <div className="text-4xl md:text-6xl mb-3 md:mb-4">🛋️⚡🐱</div>
+            <h2 className="text-2xl md:text-4xl font-extrabold text-orange-400 mb-4 md:mb-6">¿Listo para destruir?</h2>
+            <p className="text-base md:text-xl mb-6 md:mb-8 max-w-md px-4">
+              Rasguña el sofá cuando no haya moros en la costa.
               Si la luz te toca mientras rasguñas... ¡Pierdes!
             </p>
             <button
               onClick={startGame}
-              className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 px-10 rounded-full text-2xl transform transition hover:scale-105 active:scale-95 shadow-lg touch-auto cursor-pointer"
+              onTouchEnd={(e) => { e.preventDefault(); startGame(); }}
+              className="bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-bold py-3 md:py-4 px-8 md:px-10 rounded-full text-xl md:text-2xl transform transition hover:scale-105 active:scale-95 shadow-lg"
             >
               Jugar
             </button>
