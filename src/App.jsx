@@ -67,6 +67,15 @@ const games = [
     color: 'from-green-500 to-red-500',
     type: 'html',
     path: '/saltar.html'
+  },
+  {
+    id: 'fart-box',
+    title: 'Fart Box 3x3',
+    description: 'Soundboard de efectos de sonido épicos',
+    emoji: '💨',
+    color: 'from-purple-600 to-pink-600',
+    type: 'html',
+    path: '/peos.html'
   }
 ];
 

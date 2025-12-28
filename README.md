@@ -64,6 +64,12 @@ Santa salta entre edificios navideños en la ciudad.
 - **Controles**: Click/Touch para saltar
 - **Objetivo**: Salta entre edificios sin caer
 
+#### 💨 Fart Box 3x3
+Soundboard interactivo con efectos de sonido divertidos.
+- **Tecnología**: HTML5 + Tailwind CSS
+- **Controles**: Click/Touch en los botones
+- **Objetivo**: Crea combinaciones épicas de sonidos
+
 ## 🛠️ Tecnologías
 
 - **React 18** - Framework principal
@@ -94,7 +100,7 @@ game-central/
 ## 🎨 Características
 
 - ✨ Menú principal con diseño moderno
-- 🎯 7 juegos únicos y divertidos (3 React + 4 HTML5)
+- 🎯 8 juegos únicos y divertidos (3 React + 5 HTML5)
 - 📱 Diseño responsive (móvil y desktop)
 - 🔄 Navegación fluida entre juegos
 - 🎵 Efectos de sonido integrados
