@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cohete a Gas - ¡Cuidado con el Fart!</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
+        
+        body {
+            background-color: #0f172a;
+            color: white;
+            font-family: 'Fredoka One', cursive;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+        }
+
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+            transform: translate3d(0, 0, 0);
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="ui-layer">
+        <div class="text-center mt-4">
+            <h1 class="text-4xl text-yellow-400 drop-shadow-md">ASTRO-GAS</h1>
+            <p class="text-xl text-blue-200">Puntaje: <span id="scoreDisplay">0</span></p>
+        </div>
+        
+
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+
+    // Estado del juego
+    let gameState = 'CHARGING'; // CHARGING, LAUNCHING, EXPLODED
+    let score = 0;
+    let width, height;
+    
+    // Variables del cohete
+    let gasLevel = 0;
+    let gasMax = 100;
+    let chargeSpeed = 0.15;
+    let rocketY = 0;
+    let rocketVelocity = 0;
+    
+    // Partículas
+    let particles = [];
+    let stars = [];
+    let fartClouds = [];
+
+    // Texto FOME
+    let fomeText = {
+        visible: false,
+        opacity: 0,
+        scale: 0
+    };
+
+    // Audio Context (para el sonido del fart)
+    let audioCtx;
+    let currentAudio = [];
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        if(gameState === 'CHARGING') {
+            rocketY = height - 150;
+        }
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Inicializar Estrellas
+    for(let i=0; i<100; i++) {
+        stars.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            size: Math.random() * 2,
+            speed: Math.random() * 0.5 + 0.1
+        });
+    }
+
+    // Input Handling
+    let canResetGame = false;
+    let spacePressed = false;
+
+    function handleInput() {
+        if (gameState === 'CHARGING' && !spacePressed) {
+            spacePressed = true;
+            launchRocket();
+        }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        initAudio();
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        if (e.code === 'Space' && !e.repeat) {
+            if(gameState === 'EXPLODED' && canResetGame) {
+                resetGame();
+            } else {
+                handleInput();
+            }
+        }
+    });
+
+    document.addEventListener('keyup', (e) => {
+        if (e.code === 'Space') {
+            spacePressed = false;
+        }
+    });
+
+    document.addEventListener('touchstart', (e) => {
+        initAudio();
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        if(gameState === 'EXPLODED' && canResetGame) {
+            resetGame();
+        } else if(gameState === 'CHARGING') {
+            handleInput();
+        }
+    });
+
+    document.addEventListener('touchend', (e) => {
+        spacePressed = false;
+    });
+
+    // Audio Simple (Oscilador)
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    function stopAllAudio() {
+        // Stop all currently playing audio
+        currentAudio.forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0;
+        });
+        currentAudio = [];
+    }
+
+    function playSound(type) {
+        if (type === 'launch') {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(200, now);
+            osc.frequency.exponentialRampToValueAtTime(800, now + 0.5);
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            osc.start(now);
+            osc.stop(now + 0.5);
+        } else if (type === 'fart') {
+            // Play fart sound effect
+            const audio1 = new Audio('peos/fart-sound-effect-16-11093.mp3');
+            audio1.volume = 0.5;
+            audio1.play().catch(err => console.log('Audio play failed:', err));
+            currentAudio.push(audio1);
+
+            // Play fome video sound
+            const audio2 = new Audio('fome.mp4');
+            audio2.volume = 0.8;
+            audio2.play().catch(err => console.log('Audio play failed:', err));
+            currentAudio.push(audio2);
+
+            // Auto-remove from array when finished
+            audio1.addEventListener('ended', () => {
+                const index = currentAudio.indexOf(audio1);
+                if (index > -1) currentAudio.splice(index, 1);
+            });
+            audio2.addEventListener('ended', () => {
+                const index = currentAudio.indexOf(audio2);
+                if (index > -1) currentAudio.splice(index, 1);
+            });
+        } else if (type === 'tick') {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, now);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        }
+    }
+
+    function startGame() {
+        initAudio();
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+
+        gameState = 'CHARGING';
+        score = 0;
+        scoreDisplay.innerText = score;
+        resetRound();
+    }
+
+    function resetRound() {
+        gasLevel = 0;
+        rocketY = height - 150;
+        rocketVelocity = 0;
+        particles = [];
+        fartClouds = [];
+        fomeText.visible = false;
+        fomeText.opacity = 0;
+        fomeText.scale = 0;
+        spacePressed = false;
+        chargeSpeed = 0.15 + (score * 0.02); // Se pone más difícil (más lento)
+        if (gameState !== 'EXPLODED') {
+            gameState = 'CHARGING';
+        }
+    }
+
+    function resetGame() {
+        canResetGame = false;
+
+        // Detener todos los sonidos
+        stopAllAudio();
+
+        // Limpiar todo primero
+        particles = [];
+        fartClouds = [];
+        fomeText.visible = false;
+        fomeText.opacity = 0;
+        fomeText.scale = 0;
+        gasLevel = 0;
+        score = 0;
+        scoreDisplay.innerText = 0;
+        rocketY = height - 150;
+        rocketVelocity = 0;
+        chargeSpeed = 0.15;
+        spacePressed = false;
+
+        // Luego cambiar el estado
+        gameState = 'CHARGING';
+    }
+
+    function launchRocket() {
+        if (gasLevel > 0) {
+            playSound('launch');
+            gameState = 'LAUNCHING';
+            // Crear fuego
+            for(let i=0; i<20; i++) {
+                particles.push(createParticle(width/2, rocketY + 60, 'fire'));
+            }
+            // Puntos basados en cuánto arriesgaste (más gas = más puntos)
+            const riskBonus = Math.floor(gasLevel);
+            score += 100 + riskBonus;
+            scoreDisplay.innerText = score;
+        }
+    }
+
+    function explode() {
+        playSound('fart');
+        gameState = 'EXPLODED';
+        canResetGame = false;
+
+        // Mostrar texto FOME
+        fomeText.visible = true;
+        fomeText.opacity = 0;
+        fomeText.scale = 0;
+
+        // Fart gigante (muchas partículas verdes)
+        for(let i=0; i<150; i++) {
+            particles.push(createParticle(width/2, rocketY, 'fart'));
+        }
+
+        // Crear nubes de fart animadas
+        for(let i=0; i<5; i++) {
+            fartClouds.push({
+                x: width/2 + (Math.random() - 0.5) * 100,
+                y: rocketY + (Math.random() - 0.5) * 50,
+                size: 50 + Math.random() * 100,
+                opacity: 0.8,
+                vx: (Math.random() - 0.5) * 3,
+                vy: (Math.random() - 0.5) * 3,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.1,
+                color: `hsl(${100 + Math.random()*40}, 80%, 50%)`
+            });
+        }
+
+        // Después de 3 segundos, detener el sonido y permitir reiniciar
+        setTimeout(() => {
+            stopAllAudio();
+            canResetGame = true;
+        }, 3000);
+    }
+
+    function createParticle(x, y, type) {
+        return {
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * (type === 'fart' ? 10 : 4),
+            vy: (Math.random() - 0.5) * (type === 'fart' ? 10 : 4) + (type === 'fire' ? 5 : 0),
+            life: 1.0,
+            color: type === 'fart' ? `hsl(${100 + Math.random()*40}, 100%, 50%)` : `hsl(${10 + Math.random()*30}, 100%, 50%)`,
+            size: Math.random() * 10 + 5,
+            type: type
+        };
+    }
+
+    function drawRocket(x, y, shake) {
+        ctx.save();
+        ctx.translate(x + shake, y);
+
+        // Cuerpo
+        ctx.fillStyle = '#e2e8f0'; // Slate 200
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 30, 60, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ventana
+        ctx.fillStyle = '#3b82f6'; // Blue 500
+        ctx.beginPath();
+        ctx.arc(0, -20, 10, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Borde ventana
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Aletas
+        ctx.fillStyle = '#ef4444'; // Red 500
+        ctx.beginPath();
+        ctx.moveTo(-30, 20);
+        ctx.lineTo(-45, 50);
+        ctx.lineTo(-20, 50);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(30, 20);
+        ctx.lineTo(45, 50);
+        ctx.lineTo(20, 50);
+        ctx.fill();
+
+        // El medidor de gas "hinchado" visualmente
+        if (gasLevel > 80) {
+            ctx.fillStyle = 'rgba(50, 255, 50, 0.3)';
+            ctx.beginPath();
+            ctx.arc(0, 30, 10 + (gasLevel - 80), 0, Math.PI, false);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    function drawGasBar() {
+        const barWidth = 400;
+        const barHeight = 40;
+        const x = width / 2 - barWidth / 2;
+        const y = rocketY - 100;
+
+        // Fondo barra
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(x, y, barWidth, barHeight);
+
+        // Relleno
+        let color = '#3b82f6'; // Azul seguro
+        if (gasLevel > 50) color = '#eab308'; // Amarillo cuidado
+        if (gasLevel > 85) color = '#ef4444'; // Rojo peligro
+
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, barWidth * (gasLevel / 100), barHeight);
+
+        // Borde
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, barWidth, barHeight);
+
+        // Texto
+        ctx.fillStyle = 'white';
+        ctx.font = '24px Fredoka One';
+        ctx.textAlign = 'center';
+
+        if (gameState === 'CHARGING') {
+             if (gasLevel > 90) {
+                 ctx.fillText("¡CUIDADO!", width/2, y - 15);
+             } else {
+                 ctx.fillText("PRESION DE GAS", width/2, y - 15);
+             }
+        }
+    }
+
+    function loop() {
+        // Limpiar
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, width, height);
+
+        // Dibujar Estrellas
+        ctx.fillStyle = 'white';
+        stars.forEach(star => {
+            star.y += star.speed + (gameState === 'LAUNCHING' ? 10 : 0);
+            if (star.y > height) star.y = 0;
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Lógica del juego
+        let shake = 0;
+
+        if (gameState === 'CHARGING') {
+            // Carga automática
+            gasLevel += chargeSpeed;
+            
+            // Shake effect cuando está lleno
+            if (gasLevel > 70) {
+                shake = (Math.random() - 0.5) * ((gasLevel - 70) / 5);
+            }
+
+            // Explotar si se pasa
+            if (gasLevel >= 100) {
+                explode();
+            }
+        } else if (gameState === 'LAUNCHING') {
+            rocketVelocity += 1;
+            rocketY -= rocketVelocity;
+            
+            // Generar estela
+            particles.push(createParticle(width/2, rocketY + 50, 'fire'));
+
+            // Siguiente ronda
+            if (rocketY < -100) {
+                resetRound();
+            }
+        }
+
+        // Dibujar Cohete (si no ha explotado)
+        if (gameState !== 'EXPLODED') {
+            drawRocket(width / 2, rocketY, shake);
+            if (gameState === 'CHARGING') drawGasBar();
+        }
+
+        // Partículas
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.02;
+            p.size *= 0.95;
+
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+
+        // Nubes de fart (animación más elaborada)
+        for (let i = fartClouds.length - 1; i >= 0; i--) {
+            let cloud = fartClouds[i];
+
+            // Actualizar posición y rotación
+            cloud.x += cloud.vx;
+            cloud.y += cloud.vy;
+            cloud.rotation += cloud.rotationSpeed;
+            cloud.size *= 1.02; // Expandir
+            cloud.opacity -= 0.008; // Desvanecer lentamente
+
+            // Dibujar nube con forma orgánica
+            ctx.save();
+            ctx.translate(cloud.x, cloud.y);
+            ctx.rotate(cloud.rotation);
+            ctx.globalAlpha = cloud.opacity;
+
+            // Dibujar múltiples círculos para crear forma de nube
+            ctx.fillStyle = cloud.color;
+            for(let j = 0; j < 5; j++) {
+                let angle = (j / 5) * Math.PI * 2;
+                let offsetX = Math.cos(angle) * cloud.size * 0.3;
+                let offsetY = Math.sin(angle) * cloud.size * 0.3;
+                ctx.beginPath();
+                ctx.arc(offsetX, offsetY, cloud.size * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Centro de la nube
+            ctx.beginPath();
+            ctx.arc(0, 0, cloud.size * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 1.0;
+            ctx.restore();
+
+            // Eliminar si está completamente transparente
+            if (cloud.opacity <= 0) fartClouds.splice(i, 1);
+        }
+
+        // Dibujar texto FOME
+        if (fomeText.visible) {
+            // Animar entrada
+            if (fomeText.opacity < 1) {
+                fomeText.opacity += 0.02;
+            }
+            if (fomeText.scale < 1) {
+                fomeText.scale += 0.03;
+            }
+
+            ctx.save();
+            ctx.translate(width / 2, height / 2);
+            ctx.scale(fomeText.scale, fomeText.scale);
+            ctx.globalAlpha = fomeText.opacity;
+
+            // Sombra para profundidad
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            ctx.shadowBlur = 30;
+            ctx.shadowOffsetX = 10;
+            ctx.shadowOffsetY = 10;
+
+            // Texto principal
+            ctx.font = 'bold ' + Math.min(width * 0.4, 400) + 'px Fredoka One';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Borde
+            ctx.strokeStyle = '#059669'; // Green 600
+            ctx.lineWidth = 15;
+            ctx.strokeText('FOME', 0, 0);
+
+            // Relleno con gradiente
+            const gradient = ctx.createLinearGradient(0, -100, 0, 100);
+            gradient.addColorStop(0, '#10b981'); // Green 500
+            gradient.addColorStop(0.5, '#34d399'); // Green 400
+            gradient.addColorStop(1, '#6ee7b7'); // Green 300
+            ctx.fillStyle = gradient;
+            ctx.fillText('FOME', 0, 0);
+
+            ctx.globalAlpha = 1.0;
+            ctx.restore();
+        }
+
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+
+</script>
+<script src="/game-wrapper.js"></script>
+</body>
+</html>

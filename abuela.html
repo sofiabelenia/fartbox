@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>El Propulsor Navideño de la Abuela</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a202c;
+            touch-action: manipulation; /* Mejora la respuesta táctil */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Capa de Interfaz -->
+    <div id="ui-layer">
+        <div class="text-center">
+            <h1 class="text-3xl md:text-5xl font-bold text-white drop-shadow-md mt-4">🚀 ¡Operación Despegue!</h1>
+            <p class="text-yellow-300 text-lg mt-2 font-bold animate-pulse">¡Toca RÁPIDO para cargar gas!</p>
+            <div class="mt-4 w-full max-w-md mx-auto bg-gray-700 rounded-full h-6 border-2 border-white">
+                <div id="altitude-bar" class="bg-gradient-to-r from-green-400 to-red-500 h-full rounded-full" style="width: 0%"></div>
+            </div>
+            <p id="stats" class="text-white mt-1 text-sm">Altitud: 0m</p>
+        </div>
+        
+        <div id="message-area" class="text-center pb-10">
+            <!-- Mensajes dinámicos aparecerán aquí -->
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const altitudeBar = document.getElementById('altitude-bar');
+        const statsText = document.getElementById('stats');
+        const messageArea = document.getElementById('message-area');
+
+        // Pre-cargar el sonido de pedo
+        const fartSound = new Audio('peos/furtz22-198542.mp3');
+        fartSound.preload = 'auto';
+
+        // Pre-cargar el sonido del mega fart (intro.mp3)
+        const megaFartSound = new Audio('peos/intro.mp3');
+        megaFartSound.preload = 'auto';
+
+        // Pre-cargar la imagen de la abuela
+        const grandmaImg = new Image();
+        grandmaImg.src = 'abuela.png';
+
+        // Pre-cargar la imagen de la silla
+        const chairImg = new Image();
+        chairImg.src = 'silla.png';
+
+        // Configuración del juego
+        let width, height;
+        let particles = [];
+        let texts = [];
+        let score = 0;
+        let maxScore = 0;
+        let reachedHeaven = false; // Flag para saber si ya llegó al cielo
+        const HEAVEN_ALTITUDE = 300; // Altitud para llegar al cielo (cuando se llena la barra)
+
+        // Estado de la abuela
+        const grandma = {
+            x: 0,
+            y: 0,
+            vy: 0, // Velocidad vertical
+            vx: 0, // Velocidad horizontal
+            size: 120, // Aumentado para que la imagen se vea mejor
+            rotation: 0,
+            grounded: true,
+            fartMeter: 0, // Medidor visual de "carga"
+            flyingAcrossScreen: false // Flag para cuando vuela horizontalmente
+        };
+
+        // Constantes de física
+        const GRAVITY = 0.4;
+        const PUSH_FORCE = 6; // Qué tan fuerte empuja cada clic
+        const FRICTION = 0.98;
+        const FLOOR_OFFSET = 100;
+
+        // Assets (Emojis)
+        const SPRITE_GRANDMA = "🤶"; // Usamos Mamá Noel para el sombrero incluido
+        const SPRITE_CHAIR = "🪑";
+        const SPRITE_GAS = "💨";
+        const BACKGROUND_OBJECTS = ["🎄", "🎁", "🍪", "🥛", "❄️"];
+
+        // Fondo
+        let stars = [];
+        let backgroundOffset = 0; // Offset del fondo para simular movimiento
+        let lightSpeedMode = false; // Modo velocidad de la luz
+        let lightSpeedOffset = 0; // Offset adicional para velocidad de la luz
+        let moon = {
+            x: 0,
+            y: 0,
+            size: 100,
+            visible: false
+        };
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            grandma.x = width / 2;
+            if (grandma.grounded) {
+                grandma.y = height - FLOOR_OFFSET - grandma.size;
+            }
+            moon.x = width * 0.8; // Posición de la luna
+            moon.y = -200; // Arriba fuera de vista inicialmente
+            initStars();
+        }
+
+        function initStars() {
+            stars = [];
+            for(let i=0; i<100; i++) { // Más estrellas para mejor efecto
+                stars.push({
+                    x: Math.random() * width,
+                    y: Math.random() * (height * 3), // Distribuir en área más grande
+                    size: Math.random() * 3,
+                    speed: Math.random() * 2 + 0.5,
+                    baseY: 0 // Guardar posición base
+                });
+            }
+            stars.forEach(star => star.baseY = star.y);
+        }
+
+        // Sistema de Partículas (El Gas)
+        class Particle {
+            constructor(x, y, isMega = false) {
+                this.x = x + (Math.random() - 0.5) * (isMega ? 200 : 40);
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * (isMega ? 12 : 4);
+                this.vy = Math.random() * (isMega ? 8 : 3) + 2; // Van hacia abajo
+                this.life = 1.0;
+                this.size = Math.random() * (isMega ? 60 : 20) + (isMega ? 30 : 10);
+                this.color = `hsl(${70 + Math.random() * 40}, 100%, 50%)`; // Verdes amarillentos
+                this.isMega = isMega;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= (this.isMega ? 0.01 : 0.02);
+                this.size += (this.isMega ? 2 : 0.5);
+            }
+            draw(ctx) {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Anillo exterior para mega partículas
+                if (this.isMega) {
+                    ctx.strokeStyle = `hsl(${40 + Math.random() * 20}, 100%, 60%)`;
+                    ctx.lineWidth = 5;
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        // Textos flotantes (Onomatopeyas)
+        class FloatingText {
+            constructor(x, y, text) {
+                this.x = x + (Math.random() - 0.5) * 50;
+                this.y = y;
+                this.text = text;
+                this.life = 1.0;
+                this.vy = -2;
+                this.size = 20 + Math.random() * 20;
+            }
+            update() {
+                this.y += this.vy;
+                this.life -= 0.02;
+            }
+            draw(ctx) {
+                ctx.globalAlpha = this.life;
+                ctx.font = `bold ${this.size}px Arial`;
+                ctx.fillStyle = "#fff";
+                ctx.strokeStyle = "#000";
+                ctx.lineWidth = 3;
+                ctx.strokeText(this.text, this.x, this.y);
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function spawnFart() {
+            // Empujar a la abuela
+            grandma.vy -= PUSH_FORCE;
+            grandma.grounded = false;
+
+            // Reproducir sonido de pedo
+            fartSound.currentTime = 0; // Reiniciar si ya se está reproduciendo
+            fartSound.play().catch(err => {
+                console.log('Error al reproducir sonido:', err);
+            });
+
+            // Efectos visuales
+            for(let i=0; i<5; i++) {
+                particles.push(new Particle(grandma.x, grandma.y + grandma.size/2));
+            }
+
+            // Texto cómico
+            const noises = ["¡PRRRT!", "¡POOM!", "¡ZAS!", "¡PUF!", "¡BRRRM!"];
+            const randomNoise = noises[Math.floor(Math.random() * noises.length)];
+            texts.push(new FloatingText(grandma.x, grandma.y, randomNoise));
+        }
+
+        function spawnMegaFart() {
+            // Reproducir el sonido épico del mega fart
+            megaFartSound.currentTime = 0;
+            megaFartSound.play().catch(err => {
+                console.log('Error al reproducir mega fart:', err);
+            });
+
+            // MEGA explosión de partículas en oleadas
+            for(let wave = 0; wave < 5; wave++) {
+                setTimeout(() => {
+                    for(let i=0; i<30; i++) {
+                        particles.push(new Particle(grandma.x, grandma.y + grandma.size/2, true));
+                    }
+
+                    // Efecto de pantalla shake en cada oleada
+                    canvas.classList.add('shake');
+                    setTimeout(() => canvas.classList.remove('shake'), 200);
+                }, wave * 150);
+            }
+
+            // Explosión de estrellas (múltiples estrellas disparadas en todas direcciones)
+            for(let i = 0; i < 50; i++) {
+                setTimeout(() => {
+                    let angle = (Math.PI * 2 * i) / 50;
+                    let speed = 5 + Math.random() * 5;
+                    stars.push({
+                        x: grandma.x,
+                        y: grandma.y,
+                        baseY: grandma.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        size: 2 + Math.random() * 4,
+                        speed: 0,
+                        isExplosion: true,
+                        life: 1.0
+                    });
+                }, i * 10);
+            }
+
+            // Textos épicos en secuencia
+            const megaNoises = [
+                "💥 MEGA FART 💥",
+                "🌟 ¡BARRA LLENA! 🌟",
+                "⚡ BOOOOM ⚡",
+                "🚀 ¡AL INFINITO! 🚀"
+            ];
+            megaNoises.forEach((noise, index) => {
+                setTimeout(() => {
+                    texts.push(new FloatingText(
+                        grandma.x + (Math.random() - 0.5) * 200,
+                        grandma.y - index * 60,
+                        noise
+                    ));
+                }, index * 300);
+            });
+
+            // Partículas adicionales en espiral
+            for(let i = 0; i < 360; i += 30) {
+                setTimeout(() => {
+                    const angle = (i * Math.PI) / 180;
+                    const distance = 100;
+                    const px = grandma.x + Math.cos(angle) * distance;
+                    const py = grandma.y + Math.sin(angle) * distance;
+                    particles.push(new Particle(px, py, true));
+                }, i * 2);
+            }
+
+            // Super impulso final
+            grandma.vy -= PUSH_FORCE * 8;
+
+            // Flash de pantalla
+            setTimeout(() => {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.fillRect(0, 0, width, height);
+            }, 100);
+        }
+
+        function update() {
+            // Calcular offset del fondo basado en la altitud de la abuela
+            const floorLevel = height - FLOOR_OFFSET - grandma.size/2;
+            let altitude = Math.floor((floorLevel - grandma.y) / 10);
+            if (altitude < 0) altitude = 0;
+
+            // El fondo se mueve hacia abajo cuando la abuela sube
+            // Pero se mantiene en el máximo cuando está volando horizontalmente
+            if (!grandma.flyingAcrossScreen) {
+                backgroundOffset = altitude * 2;
+            } else {
+                // En modo velocidad de la luz, acelerar el offset
+                if (lightSpeedMode) {
+                    lightSpeedOffset += 20; // Velocidad rápida hacia la luna
+                }
+            }
+
+            // Mostrar la luna cuando alcanza cierta altura
+            if (altitude > 100) {
+                moon.visible = true;
+            }
+
+            // Fondo (Estrellas con parallax)
+            for (let i = stars.length - 1; i >= 0; i--) {
+                let star = stars[i];
+
+                if (star.isExplosion) {
+                    // Estrellas de explosión se mueven con su velocidad propia
+                    star.x += star.vx;
+                    star.y += star.vy;
+                    star.life -= 0.01;
+                    star.vy += 0.2; // Gravedad para las estrellas de explosión
+
+                    // Eliminar cuando se desvanecen o salen de pantalla
+                    if (star.life <= 0 || star.y > height + 100) {
+                        stars.splice(i, 1);
+                    }
+                } else {
+                    // Estrellas normales con parallax
+                    let totalOffset = backgroundOffset + lightSpeedOffset;
+                    star.y = star.baseY + totalOffset + star.speed;
+
+                    // En modo light speed, las estrellas se mueven más rápido
+                    if (lightSpeedMode) {
+                        star.y += 15;
+                    }
+
+                    // Reciclar estrellas que salen de la vista
+                    if (star.y > height + totalOffset + 100) {
+                        star.y = -10;
+                        star.baseY = -10 - totalOffset;
+                    }
+                }
+            }
+
+            // Física de la Abuela
+            if (grandma.flyingAcrossScreen) {
+                // Cuando vuela horizontalmente, física diferente
+                grandma.x += grandma.vx;
+                grandma.rotation += 0.3; // Rotación continua mientras vuela
+
+                // Generar partículas de fart continuo detrás de ella
+                if (Math.random() < 0.5) {
+                    particles.push(new Particle(grandma.x - 50, grandma.y, true));
+                }
+
+                // Mantener la altitud visible en el medio de la pantalla
+                grandma.y = height / 3; // Posición visible en el tercio superior
+
+                // Si sale de la pantalla, reiniciar desde el otro lado o detener
+                if (grandma.x > width + grandma.size) {
+                    // Opcional: hacer que reaparezca del otro lado
+                    grandma.x = -grandma.size;
+                }
+            } else {
+                // Física normal vertical
+                grandma.vy += GRAVITY;
+                grandma.vy *= FRICTION;
+                grandma.y += grandma.vy;
+
+                // Rotación basada en velocidad (efecto visual de descontrol)
+                grandma.rotation = Math.sin(Date.now() / 100) * (grandma.vy * 0.02);
+
+                // Colisión con el suelo
+                const floorLevel = height - FLOOR_OFFSET - grandma.size/2;
+                if (grandma.y > floorLevel) {
+                    grandma.y = floorLevel;
+                    grandma.vy = 0;
+                    grandma.grounded = true;
+                    grandma.rotation = 0;
+                }
+            }
+
+            // Actualizar altitud max (ya se calculó al inicio del update)
+            if (altitude > maxScore) maxScore = altitude;
+
+            // Verificar si llegó al cielo
+            if (altitude >= HEAVEN_ALTITUDE && !reachedHeaven) {
+                reachedHeaven = true;
+                spawnMegaFart();
+                messageArea.innerHTML = "<h2 class='text-4xl text-yellow-300 font-bold animate-pulse'>🎉 ¡¡¡LLEGÓ AL CIELO!!! 🎉</h2>";
+
+                // Iniciar el vuelo horizontal épico
+                grandma.flyingAcrossScreen = true;
+                grandma.vx = 15; // Velocidad horizontal rápida
+                grandma.vy = 0; // Detener movimiento vertical
+
+                // Activar modo velocidad de la luz después de 1 segundo
+                setTimeout(() => {
+                    lightSpeedMode = true;
+                    messageArea.innerHTML = "<h2 class='text-4xl text-cyan-300 font-bold animate-pulse'>⚡ ¡VELOCIDAD DE LA LUZ! ⚡</h2>";
+                }, 1000);
+
+                // Cuando termine el sonido del mega fart, resetear el juego
+                megaFartSound.onended = function() {
+                    // Resetear todo a posición inicial
+                    grandma.flyingAcrossScreen = false;
+                    grandma.x = width / 2;
+                    grandma.y = height - FLOOR_OFFSET - grandma.size;
+                    grandma.vx = 0;
+                    grandma.vy = 0;
+                    grandma.rotation = 0;
+                    grandma.grounded = true;
+                    reachedHeaven = false;
+                    messageArea.innerHTML = "";
+                    backgroundOffset = 0;
+                    lightSpeedMode = false;
+                    lightSpeedOffset = 0;
+                    moon.visible = false;
+                    // Reiniciar estrellas
+                    initStars();
+                };
+            }
+
+            // Actualizar UI
+            statsText.innerText = `Altitud: ${altitude}m (Máx: ${maxScore}m)`;
+            // Cap the progress bar at 100% when reaching HEAVEN_ALTITUDE
+            let barPercent = Math.min((altitude / HEAVEN_ALTITUDE) * 100, 100);
+            altitudeBar.style.width = `${barPercent}%`;
+
+            // Mensajes de altura
+            if (!reachedHeaven) {
+                if (altitude > 50 && altitude < 80) messageArea.innerHTML = "<h2 class='text-2xl text-white font-bold'>¡Despegando! 🏠</h2>";
+                else if (altitude > 150 && altitude < 180) messageArea.innerHTML = "<h2 class='text-2xl text-yellow-300 font-bold'>¡Pasando las nubes! ☁️</h2>";
+                else if (altitude > 250 && altitude < 280) messageArea.innerHTML = "<h2 class='text-2xl text-red-400 font-bold animate-pulse'>¡¡CASI LLENO!! 🔥</h2>";
+                else if (altitude > 280 && altitude < 300) messageArea.innerHTML = "<h2 class='text-3xl text-purple-400 font-bold animate-pulse'>¡¡¡A PUNTO!!! ⚡</h2>";
+                else if (altitude < 50) messageArea.innerHTML = "";
+            }
+
+            // Actualizar partículas
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) particles.splice(i, 1);
+            }
+
+            // Actualizar textos
+            for (let i = texts.length - 1; i >= 0; i--) {
+                texts[i].update();
+                if (texts[i].life <= 0) texts.splice(i, 1);
+            }
+        }
+
+        function draw() {
+            // Calcular altitud para efectos visuales
+            const floorLevel = height - FLOOR_OFFSET - grandma.size/2;
+            let altitude = Math.floor((floorLevel - grandma.y) / 10);
+            if (altitude < 0) altitude = 0;
+
+            // Gradiente del cielo que cambia con la altitud
+            let gradient = ctx.createLinearGradient(0, 0, 0, height);
+
+            // A mayor altitud, más oscuro el cielo (simula salir de la atmósfera)
+            // Cuando está volando horizontalmente, mantener el cielo en máxima oscuridad
+            let skyDarkness;
+            if (grandma.flyingAcrossScreen) {
+                skyDarkness = 1; // Máxima oscuridad (espacio)
+            } else {
+                skyDarkness = Math.min(altitude / HEAVEN_ALTITUDE, 1);
+            }
+
+            let topColor = `rgb(${15 - skyDarkness * 15}, ${23 - skyDarkness * 23}, ${42 - skyDarkness * 42})`;
+            let bottomColor = `rgb(${55 - skyDarkness * 40}, ${65 - skyDarkness * 50}, ${81 - skyDarkness * 60})`;
+
+            gradient.addColorStop(0, topColor);
+            gradient.addColorStop(1, bottomColor);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // Dibujar la luna si está visible
+            if (moon.visible) {
+                // Posición de la luna se ajusta con el offset del fondo
+                let totalOffset = backgroundOffset + lightSpeedOffset;
+                let moonY = moon.y + totalOffset * 0.5; // Parallax para la luna
+
+                // En modo light speed, la luna crece más rápido (acercamiento)
+                let moonSize = moon.size;
+                if (lightSpeedMode) {
+                    moonSize = moon.size + (lightSpeedOffset * 0.3);
+                }
+
+                if (moonY < height && moonY > -moonSize) {
+                    // Luna brillante
+                    ctx.fillStyle = "#f0e68c";
+                    ctx.beginPath();
+                    ctx.arc(moon.x, moonY, moonSize, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Resplandor de la luna (más intenso en light speed)
+                    let glowIntensity = lightSpeedMode ? 0.5 : 0.3;
+                    let moonGlow = ctx.createRadialGradient(moon.x, moonY, moonSize * 0.8, moon.x, moonY, moonSize * 1.5);
+                    moonGlow.addColorStop(0, `rgba(240, 230, 140, ${glowIntensity})`);
+                    moonGlow.addColorStop(1, "rgba(240, 230, 140, 0)");
+                    ctx.fillStyle = moonGlow;
+                    ctx.beginPath();
+                    ctx.arc(moon.x, moonY, moonSize * 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Cráteres (escalados con el tamaño)
+                    let craterScale = moonSize / moon.size;
+                    ctx.fillStyle = "#d4af37";
+                    ctx.globalAlpha = 0.3;
+                    ctx.beginPath();
+                    ctx.arc(moon.x - 20 * craterScale, moonY - 15 * craterScale, 15 * craterScale, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(moon.x + 25 * craterScale, moonY + 10 * craterScale, 20 * craterScale, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(moon.x - 10 * craterScale, moonY + 30 * craterScale, 12 * craterScale, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                }
+            }
+
+            // Dibujar estrellas (más visibles a mayor altitud)
+            stars.forEach(star => {
+                if (star.isExplosion) {
+                    // Estrellas de explosión - coloridas y brillantes
+                    ctx.globalAlpha = star.life;
+
+                    // Colores variados para las estrellas de explosión
+                    let colors = ['#FFD700', '#FF69B4', '#00FFFF', '#FF6347', '#7FFF00', '#FF1493'];
+                    let colorIndex = Math.floor(star.x * star.y) % colors.length;
+                    ctx.fillStyle = colors[colorIndex];
+
+                    // Dibujar estrella con resplandor
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = colors[colorIndex];
+                    ctx.beginPath();
+                    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Dibujar puntas de estrella
+                    ctx.save();
+                    ctx.translate(star.x, star.y);
+                    ctx.rotate(star.life * Math.PI * 4); // Rotación basada en vida
+                    for (let i = 0; i < 5; i++) {
+                        ctx.rotate(Math.PI * 2 / 5);
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(0, -star.size * 1.5);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                    ctx.shadowBlur = 0;
+                } else {
+                    // Estrellas normales del fondo
+                    let starAlpha = 0.3 + (skyDarkness * 0.7);
+                    ctx.globalAlpha = starAlpha;
+
+                    if (lightSpeedMode) {
+                        // Efecto de estela de luz (streaking stars)
+                        let gradient = ctx.createLinearGradient(star.x, star.y - 50, star.x, star.y);
+                        gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+                        gradient.addColorStop(1, 'rgba(255, 255, 255, ' + starAlpha + ')');
+                        ctx.strokeStyle = gradient;
+                        ctx.lineWidth = star.size;
+                        ctx.beginPath();
+                        ctx.moveTo(star.x, star.y - 50);
+                        ctx.lineTo(star.x, star.y);
+                        ctx.stroke();
+                    } else {
+                        // Estrellas normales
+                        ctx.fillStyle = "white";
+                        ctx.beginPath();
+                        ctx.arc(star.x, star.y, star.size, 0, Math.PI*2);
+                        ctx.fill();
+                    }
+                }
+            });
+            ctx.globalAlpha = 1.0;
+
+            // Dibujar suelo
+            ctx.fillStyle = "#5c4033"; // Marrón madera
+            ctx.fillRect(0, height - FLOOR_OFFSET, width, FLOOR_OFFSET);
+            // Alfombra navideña
+            ctx.fillStyle = "#991b1b"; // Rojo oscuro
+            ctx.fillRect(0, height - FLOOR_OFFSET, width, 20);
+
+            // Dibujar partículas (Gas) detrás de la abuela
+            particles.forEach(p => p.draw(ctx));
+
+            // Dibujar Silla (Siempre en el suelo, centrada)
+            if (chairImg.complete && !grandma.flyingAcrossScreen) {
+                let chairSize = 120;
+                ctx.drawImage(
+                    chairImg,
+                    width/2 - chairSize/2,
+                    height - FLOOR_OFFSET - chairSize,
+                    chairSize,
+                    chairSize
+                );
+            }
+
+            // Dibujar Abuela (sobre la silla o volando)
+            ctx.save();
+            ctx.translate(grandma.x, grandma.y);
+            ctx.rotate(grandma.rotation);
+
+            // Escalar un poco si está impulsándose
+            let scale = 1.0;
+            if (!grandma.grounded) scale = 1.0 + (Math.abs(grandma.vy) * 0.01);
+            ctx.scale(scale, scale);
+
+            // Dibujar la imagen de la abuela
+            if (grandmaImg.complete) {
+                ctx.drawImage(
+                    grandmaImg,
+                    -grandma.size / 2,
+                    -grandma.size / 2,
+                    grandma.size,
+                    grandma.size
+                );
+            } else {
+                // Fallback al emoji mientras carga la imagen
+                ctx.font = `${grandma.size}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(SPRITE_GRANDMA, 0, 0);
+            }
+
+            // Dibujar fuego del propulsor si va muy rápido hacia arriba
+            if (grandma.vy < -5) {
+                ctx.font = "40px Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("🔥", 0, grandma.size/2 + 20);
+            }
+
+            ctx.restore();
+
+            // Dibujar textos flotantes
+            texts.forEach(t => t.draw(ctx));
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // Input Handling
+        function handleInput(e) {
+            e.preventDefault(); // Prevenir zoom en móviles
+            // No permitir input cuando está volando horizontalmente
+            if (!grandma.flyingAcrossScreen) {
+                spawnFart();
+            }
+        }
+
+        window.addEventListener('resize', resize);
+        window.addEventListener('mousedown', handleInput);
+        window.addEventListener('touchstart', handleInput, {passive: false});
+        
+        // Tecla espacio también sirve
+        window.addEventListener('keydown', (e) => {
+            if(e.code === 'Space' && !grandma.flyingAcrossScreen) spawnFart();
+        });
+
+        // Iniciar
+        resize();
+        loop();
+
+    </script>
+<script src="/game-wrapper.js"></script>
+</body>
+</html>

@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Santa Claus: Salto a la Ciudad</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0d1b2a; /* Azul noche oscuro */
+            color: white;
+            font-family: 'Arial', sans-serif;
+            user-select: none;
+        }
+
+        #gameCanvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+        }
+
+        .info-box {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+            color: #ff4d4d;
+            text-shadow: 2px 2px 0 #fff;
+        }
+
+        p {
+            margin: 5px 0;
+            font-size: 16px;
+        }
+
+        #wind-meter {
+            display: flex;
+            align-items: center;
+            font-weight: bold;
+        }
+
+        .arrow {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+
+        #message-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            display: none;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .big-text {
+            font-size: 60px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 4px 4px 0 #000;
+        }
+
+        .restart-hint {
+            font-size: 20px;
+            color: #ddd;
+            margin-top: 10px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="info-box">
+            <h1>Santa Jump</h1>
+            <p>Mantén <strong>ESPACIO</strong> para cargar.</p>
+            <p>Suelta para saltar.</p>
+        </div>
+        <div class="info-box">
+            <div id="wind-meter">
+                <span id="wind-arrow" class="arrow">➡️</span>
+                <span id="wind-text">Viento: 0</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="message-overlay">
+        <div id="result-text" class="big-text"></div>
+        <div class="restart-hint">Presiona ESPACIO o Clic para Reiniciar</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Audio elements -->
+    <audio id="fomeSound" src="fome-navidad.mp4" preload="auto"></audio>
+    <audio id="fartSound" src="peos/fart-sound-effect-16-11093.mp3" preload="auto"></audio>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const uiWindText = document.getElementById('wind-text');
+        const uiWindArrow = document.getElementById('wind-arrow');
+        const overlay = document.getElementById('message-overlay');
+        const resultText = document.getElementById('result-text');
+        const fomeSound = document.getElementById('fomeSound');
+        const fartSound = document.getElementById('fartSound');
+
+        // Configuración del juego
+        let width, height;
+        const GRAVITY = 0.5;
+        let gameRunning = true;
+        let animationId;
+
+        // Estados: START, CHARGING, JUMPING, END
+        let gameState = 'START';
+
+        // Santa y Trineo
+        let santa = {
+            x: 100,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            radius: 20,
+            angle: 0
+        };
+
+        // Rampa y Ciudad
+        let rampHeight = 150;
+        let rampWidth = 200;
+        let gapSize = 0;
+        let targetBuilding = {
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0
+        };
+
+        // Mecánicas
+        let power = 0;
+        let maxPower = 25;
+        let isCharging = false;
+        let wind = 0; // Negativo es izquierda, Positivo es derecha
+
+        // Efectos visuales
+        let stars = [];
+        let snow = [];
+        let fomeParticles = [];
+        let fartParticles = [];
+
+        // Inicialización
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            resetGame();
+        }
+
+        window.addEventListener('resize', resize);
+
+        function resetGame() {
+            gameState = 'START';
+            power = 0;
+            isCharging = false;
+            fomeParticles = [];
+            fartParticles = [];
+            overlay.style.display = 'none';
+
+            // Detener el sonido de fome si está reproduciéndose
+            fomeSound.pause();
+            fomeSound.currentTime = 0;
+
+            // Generar viento aleatorio (-1.5 a 1.5)
+            // Un poco de sesgo hacia viento en contra para hacerlo difícil
+            wind = (Math.random() * 3 - 1.5);
+            updateWindUI();
+
+            // Configurar rampa (izquierda)
+            santa.x = 50;
+            santa.y = height - rampHeight - 40; // Posición inicial sobre la rampa
+            santa.vx = 0;
+            santa.vy = 0;
+            santa.angle = -Math.PI / 6; // -30 grados (apuntando arriba a la derecha)
+
+            // Configurar edificio objetivo (derecha)
+            // Altura aleatoria pero alcanzable
+            const minH = 100;
+            const maxH = height * 0.6;
+            const targetH = Math.floor(Math.random() * (maxH - minH) + minH);
+            
+            targetBuilding.w = width * 0.3; // 30% del ancho
+            targetBuilding.h = targetH;
+            targetBuilding.x = width - targetBuilding.w;
+            targetBuilding.y = height - targetH;
+
+            // Generar estrellas
+            stars = [];
+            for(let i=0; i<100; i++) {
+                stars.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height * 0.8,
+                    size: Math.random() * 2,
+                    alpha: Math.random()
+                });
+            }
+
+            // Generar nieve inicial
+            snow = [];
+            for(let i=0; i<50; i++) {
+                snow.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    vx: wind * 5 + (Math.random() - 0.5),
+                    vy: Math.random() * 3 + 1,
+                    size: Math.random() * 3
+                });
+            }
+        }
+
+        function updateWindUI() {
+            const speed = Math.abs(wind).toFixed(1);
+            let dir = wind > 0 ? "Favor ➡️" : "Contra ⬅️";
+            if (Math.abs(wind) < 0.1) dir = "Calma";
+            
+            uiWindText.innerText = `Viento: ${speed}`;
+            uiWindArrow.innerText = wind > 0 ? '💨➡️' : '⬅️💨';
+            uiWindArrow.style.color = wind > 0 ? '#4caf50' : '#f44336';
+        }
+
+        // Input Handling
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                if (gameState === 'START') {
+                    gameState = 'CHARGING';
+                    isCharging = true;
+                } else if (gameState === 'END') {
+                    resetGame();
+                }
+            }
+            if (e.code === 'KeyR') resetGame();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                if (gameState === 'CHARGING' && power >= 1) {
+                    launchSanta();
+                    // Reproducir sonido de fart y animación
+                    fartSound.currentTime = 0;
+                    fartSound.play().catch(e => console.log('Audio play error:', e));
+                    spawnFartAnimation();
+                } else if (gameState === 'CHARGING') {
+                    // No hay suficiente potencia, cancelar carga
+                    isCharging = false;
+                }
+            }
+        });
+        
+        // Soporte táctil / Mouse para reiniciar
+        window.addEventListener('mousedown', () => {
+             if (gameState === 'START') {
+                gameState = 'CHARGING';
+                isCharging = true;
+            } else if (gameState === 'END') {
+                resetGame();
+            }
+        });
+        window.addEventListener('mouseup', () => {
+             if (gameState === 'CHARGING' && power >= 1) {
+                launchSanta();
+                // Reproducir sonido de fart y animación
+                fartSound.currentTime = 0;
+                fartSound.play().catch(e => console.log('Audio play error:', e));
+                spawnFartAnimation();
+            } else if (gameState === 'CHARGING') {
+                // No hay suficiente potencia, cancelar carga
+                isCharging = false;
+            }
+        });
+        window.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // prevenir scroll
+             if (gameState === 'START') {
+                gameState = 'CHARGING';
+                isCharging = true;
+            } else if (gameState === 'END') {
+                resetGame();
+            }
+        });
+        window.addEventListener('touchend', (e) => {
+             if (gameState === 'CHARGING' && power >= 1) {
+                launchSanta();
+                // Reproducir sonido de fart y animación
+                fartSound.currentTime = 0;
+                fartSound.play().catch(e => console.log('Audio play error:', e));
+                spawnFartAnimation();
+            } else if (gameState === 'CHARGING') {
+                // No hay suficiente potencia, cancelar carga
+                isCharging = false;
+            }
+        });
+
+        function launchSanta() {
+            // Si no hay potencia suficiente, no lanzar
+            if (power < 1) {
+                isCharging = false;
+                return;
+            }
+
+            gameState = 'JUMPING';
+            isCharging = false;
+
+            // Vector de lanzamiento (45 grados aprox)
+            // La potencia se multiplica para dar velocidad
+            // Asegurar una velocidad mínima más alta
+            const launchPower = Math.max(power, 3); // Mínimo de 3 para asegurar movimiento
+            const angle = -Math.PI / 4; // -45 grados
+
+            santa.vx = Math.cos(angle) * launchPower * 2; // Aumentado de 1.5 a 2
+            santa.vy = Math.sin(angle) * launchPower * 2; // Aumentado de 1.5 a 2
+        }
+
+        function spawnFome() {
+            fomeParticles = [];
+            for(let i=0; i<40; i++) {
+                fomeParticles.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    text: "FOME",
+                    color: `hsl(${Math.random()*360}, 70%, 50%)`,
+                    size: 20 + Math.random() * 40,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: (Math.random() - 0.5) * 2,
+                    rot: (Math.random() - 0.5)
+                });
+            }
+            // Reproducir sonido de fome (saltando silencio inicial de 0.5 segundos)
+            fomeSound.currentTime = 0.5;
+            fomeSound.play().catch(e => console.log('Audio play error:', e));
+        }
+
+        function spawnFartAnimation() {
+            fartParticles = [];
+            // Crear partículas de "peo" desde la posición de Santa
+            for(let i=0; i<20; i++) {
+                fartParticles.push({
+                    x: santa.x,
+                    y: santa.y,
+                    vx: (Math.random() - 1) * 3 - 2, // Hacia atrás (izquierda)
+                    vy: (Math.random() - 0.5) * 2,
+                    size: 10 + Math.random() * 20,
+                    alpha: 1,
+                    emoji: Math.random() > 0.5 ? '💨' : '☁️'
+                });
+            }
+        }
+
+        function update() {
+            // Carga de potencia
+            if (isCharging) {
+                power += 0.5; // Aumentado de 0.4 a 0.5 para carga más rápida
+                if (power > maxPower) {
+                    power = 0; // Loop o clamp? Vamos a hacer ping-pong
+                }
+            }
+
+            // Física de salto
+            if (gameState === 'JUMPING') {
+                // Aplicar viento (afecta aceleración horizontal)
+                // El viento afecta más cuanto más alto está
+                santa.vx += wind * 0.05;
+
+                // Aplicar gravedad
+                santa.vy += GRAVITY;
+
+                // Mover
+                santa.x += santa.vx;
+                santa.y += santa.vy;
+
+                // Rotación del trineo basada en velocidad
+                santa.angle = Math.atan2(santa.vy, santa.vx);
+
+                // Colisiones
+                checkCollisions();
+            }
+
+            // Nieve
+            snow.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x > width) p.x = 0;
+                if (p.x < 0) p.x = width;
+                if (p.y > height) p.y = 0;
+            });
+            
+            // Partículas FOME
+            if (gameState === 'END' && fomeParticles.length > 0) {
+                 fomeParticles.forEach(p => {
+                     p.x += p.vx;
+                     p.y += p.vy;
+                     p.rot += 0.01;
+                 });
+            }
+
+            // Partículas de FART
+            if (fartParticles.length > 0) {
+                fartParticles.forEach((p, index) => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.alpha -= 0.02; // Desvanecimiento gradual
+                    p.size *= 1.05; // Expansión
+
+                    // Eliminar partículas que ya no son visibles
+                    if (p.alpha <= 0) {
+                        fartParticles.splice(index, 1);
+                    }
+                });
+            }
+        }
+
+        function checkCollisions() {
+            // 1. ¿Chocó contra el suelo (vacío)?
+            if (santa.y > height) {
+                gameOver(false);
+                return;
+            }
+
+            // 2. ¿Aterrizó en el edificio?
+            // Margen de error para aterrizar
+            if (santa.vy > 0 && // Debe estar cayendo
+                santa.x > targetBuilding.x && 
+                santa.x < targetBuilding.x + targetBuilding.w &&
+                santa.y >= targetBuilding.y - 10 && 
+                santa.y <= targetBuilding.y + 20) {
+                
+                // Aterrizaje exitoso
+                santa.y = targetBuilding.y - 10;
+                santa.vy = 0;
+                santa.vx = 0;
+                santa.angle = 0;
+                gameOver(true);
+            }
+
+            // 3. ¿Chocó contra la pared del edificio?
+            if (santa.x > targetBuilding.x && santa.y > targetBuilding.y && santa.x < targetBuilding.x + 50) {
+                 // Rebote "seco" y caída
+                 santa.vx = -5;
+            }
+        }
+
+        function gameOver(success) {
+            gameState = 'END';
+            overlay.style.display = 'block';
+            if (success) {
+                resultText.innerText = "¡LLEGÓ EL REGALO!";
+                resultText.style.color = "#4caf50";
+            } else {
+                resultText.innerText = ""; // El texto lo manejan las partículas
+                spawnFome();
+            }
+        }
+
+        function draw() {
+            // Fondo
+            const gradient = ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, "#020024");
+            gradient.addColorStop(1, "#090979");
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // Estrellas
+            ctx.fillStyle = "white";
+            stars.forEach(s => {
+                ctx.globalAlpha = s.alpha;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+
+            // Luna
+            ctx.fillStyle = "#fffa";
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = "white";
+            ctx.beginPath();
+            ctx.arc(width - 100, 100, 40, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Dibujar Rampa (Izquierda)
+            ctx.fillStyle = "#888";
+            ctx.beginPath();
+            ctx.moveTo(0, height);
+            ctx.lineTo(rampWidth, height); // Base
+            ctx.lineTo(rampWidth, height - rampHeight); // Punta
+            ctx.lineTo(0, height - rampHeight); // Top Left (recto para que no caiga al inicio)
+            ctx.fill();
+            
+            // Decoración rampa
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(0, height - rampHeight);
+            ctx.lineTo(rampWidth, height - rampHeight);
+            ctx.stroke();
+
+            // Dibujar Edificio Objetivo (Derecha)
+            ctx.fillStyle = "#333";
+            ctx.fillRect(targetBuilding.x, targetBuilding.y, targetBuilding.w, targetBuilding.h);
+            
+            // Ventanas del edificio
+            ctx.fillStyle = "#ffff00";
+            for(let wy = targetBuilding.y + 20; wy < height; wy += 40) {
+                for(let wx = targetBuilding.x + 20; wx < width - 20; wx += 40) {
+                    if (Math.random() > 0.3) { // Algunas luces apagadas
+                        ctx.fillRect(wx, wy, 15, 25);
+                    }
+                }
+            }
+            
+            // Techo objetivo
+            ctx.fillStyle = "#a00";
+            ctx.fillRect(targetBuilding.x, targetBuilding.y, targetBuilding.w, 10);
+            ctx.fillStyle = "#fff";
+            ctx.font = "20px Arial";
+            ctx.fillText("META", targetBuilding.x + 20, targetBuilding.y - 15);
+
+            // Dibujar Viento (Partículas)
+            ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+            snow.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                ctx.fill();
+            });
+
+            // Dibujar Santa
+            ctx.save();
+            ctx.translate(santa.x, santa.y);
+            ctx.rotate(santa.angle);
+            
+            // Trineo simple (más grande)
+            ctx.font = "80px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            // Invertir sprite si el viento es muy fuerte en contra o solo por estética?
+            // Mantendremos orientación a la derecha
+            ctx.fillText("🎅🛷", 0, 0);
+            
+            ctx.restore();
+
+            // Dibujar Barra de Potencia (si está cargando o saltando)
+            if (gameState === 'START' || gameState === 'CHARGING') {
+                const barWidth = 200;
+                const barHeight = 20;
+                const barX = santa.x - 50;
+                const barY = santa.y - 60;
+
+                // Fondo barra
+                ctx.fillStyle = "#000";
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+
+                // Relleno barra
+                const fillPercent = power / maxPower;
+                let barColor = "#0f0";
+                if (fillPercent > 0.5) barColor = "#ff0";
+                if (fillPercent > 0.8) barColor = "#f00";
+
+                ctx.fillStyle = barColor;
+                ctx.fillRect(barX + 2, barY + 2, (barWidth - 4) * fillPercent, barHeight - 4);
+                
+                if (gameState === 'CHARGING') {
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "12px Arial";
+                    ctx.fillText("¡SOLTAR!", barX + barWidth/2 - 20, barY - 5);
+                }
+            }
+
+            // DIBUJAR "FOME" SI PERDIÓ
+            if (gameState === 'END' && fomeParticles.length > 0) {
+                fomeParticles.forEach(p => {
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rot);
+                    ctx.fillStyle = p.color;
+                    ctx.font = `bold ${p.size}px Arial`;
+                    ctx.fillText(p.text, 0, 0);
+                    ctx.strokeStyle = "white";
+                    ctx.strokeText(p.text, 0, 0);
+                    ctx.restore();
+                });
+            }
+
+            // DIBUJAR Partículas de FART
+            if (fartParticles.length > 0) {
+                fartParticles.forEach(p => {
+                    ctx.save();
+                    ctx.globalAlpha = p.alpha;
+                    ctx.font = `${p.size}px Arial`;
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(p.emoji, p.x, p.y);
+                    ctx.restore();
+                });
+            }
+        }
+
+        function loop() {
+            update();
+            draw();
+            animationId = requestAnimationFrame(loop);
+        }
+
+        // Iniciar
+        resize();
+        loop();
+
+    </script>
+<script src="/game-wrapper.js"></script>
+</body>
+</html>

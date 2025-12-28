@@ -1,0 +1,378 @@
+import React, { useState, useEffect } from 'react';
+import { Heart, Trophy, RefreshCcw, Bone, Skull } from 'lucide-react';
+
+const TOTAL_LEVELS = 5;
+
+// Configuración de niveles: Cantidad de cajas por nivel
+// Nivel 1: 6 cajas (Fácil) -> Nivel 5: 2 cajas (Difícil, 50% riesgo)
+const LEVEL_CONFIG = {
+  1: 6,
+  2: 5,
+  3: 4,
+  4: 3,
+  5: 2
+};
+
+export default function App() {
+  const [gameState, setGameState] = useState('menu'); // menu, playing, processing, gameover, victory
+  const [level, setLevel] = useState(1);
+  const [boxes, setBoxes] = useState([]);
+  const [dogStatus, setDogStatus] = useState('happy'); // happy, eating, sick, neutral
+  const [score, setScore] = useState(0);
+  const [message, setMessage] = useState('');
+  const [showSipo, setShowSipo] = useState(false); // Estado para la animación "SIPO"
+  const [showFome, setShowFome] = useState(false); // Estado para la animación "FOME"
+  const [currentAudio, setCurrentAudio] = useState([]); // Audios activos
+
+  // Inicializar nivel
+  const startLevel = (currentLevel) => {
+    const numBoxes = LEVEL_CONFIG[currentLevel];
+    const poisonIndex = Math.floor(Math.random() * numBoxes);
+    
+    const newBoxes = Array(numBoxes).fill(null).map((_, index) => ({
+      id: index,
+      isPoison: index === poisonIndex,
+      isOpen: false,
+      content: index === poisonIndex ? 'poison' : 'food'
+    }));
+
+    setBoxes(newBoxes);
+    setDogStatus('neutral');
+    setMessage(`¡Encuentra la comida rica! Solo 1 tiene veneno.`);
+    setGameState('playing');
+  };
+
+  // Función para reproducir sonidos del final
+  const playFomeSound = () => {
+    const audio1 = new Audio('peos/fart-sound-effect-16-11093.mp3');
+    audio1.volume = 0.5;
+    audio1.play().catch(err => console.log('Audio play failed:', err));
+
+    const audio2 = new Audio('fome.mp4');
+    audio2.volume = 0.8;
+    audio2.play().catch(err => console.log('Audio play failed:', err));
+
+    setCurrentAudio([audio1, audio2]);
+  };
+
+  // Función para detener todos los sonidos
+  const stopAllAudio = () => {
+    currentAudio.forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    setCurrentAudio([]);
+  };
+
+  const startGame = () => {
+    // Detener sonidos si hay alguno reproduciendo
+    stopAllAudio();
+
+    setLevel(1);
+    setScore(0);
+    setDogStatus('happy');
+    setShowFome(false);
+    startLevel(1);
+  };
+
+  const handleBoxClick = (index) => {
+    if (gameState !== 'playing') return;
+
+    // Revelar la caja seleccionada
+    const newBoxes = [...boxes];
+    newBoxes[index].isOpen = true;
+    setBoxes(newBoxes);
+    setGameState('processing');
+
+    const selectedBox = newBoxes[index];
+
+    if (selectedBox.isPoison) {
+      // Perdió
+      setDogStatus('sick');
+      setMessage('¡Oh no! ¡Estaba podrido!');
+
+      // Revelar todas las cajas para mostrar dónde estaba la comida
+      setTimeout(() => {
+        const revealedBoxes = boxes.map(b => ({ ...b, isOpen: true }));
+        setBoxes(revealedBoxes);
+        setGameState('gameover');
+
+        // Reproducir sonidos del final
+        playFomeSound();
+
+        // Mostrar animación FOME
+        setShowFome(true);
+      }, 1500);
+
+    } else {
+      // Ganó la ronda
+      setDogStatus('eating');
+      setMessage('¡Ñam ñam! ¡Qué rico!');
+      
+      // Activar animación SIPO
+      setShowSipo(true);
+      setTimeout(() => setShowSipo(false), 1000);
+
+      const newScore = score + 100 * level;
+      setScore(newScore);
+
+      setTimeout(() => {
+        if (level < TOTAL_LEVELS) {
+          setLevel(l => l + 1);
+          setDogStatus('happy');
+          startLevel(level + 1);
+        } else {
+          setDogStatus('super-happy');
+          setGameState('victory');
+        }
+      }, 1500);
+    }
+  };
+
+  // Renderizado del Perrito basado en estado
+  const renderDog = () => {
+    let emoji = '🐶';
+    let animation = 'animate-bounce-slow';
+    let bgColor = 'bg-amber-100';
+
+    switch (dogStatus) {
+      case 'happy':
+        emoji = '🐶';
+        animation = 'animate-bounce';
+        break;
+      case 'super-happy':
+        emoji = '🐩'; 
+        animation = 'animate-spin-slow';
+        bgColor = 'bg-yellow-200';
+        break;
+      case 'eating':
+        emoji = '😋';
+        animation = 'animate-pulse';
+        bgColor = 'bg-green-100';
+        break;
+      case 'sick':
+        emoji = '🤢';
+        animation = 'animate-shake'; 
+        bgColor = 'bg-green-200';
+        break;
+      case 'neutral':
+        emoji = '🐕';
+        animation = '';
+        break;
+      default:
+        emoji = '🐶';
+    }
+
+    return (
+      <div className={`transition-all duration-500 rounded-full p-8 border-4 border-amber-500 shadow-xl ${bgColor} ${animation} relative`}>
+        <span className="text-8xl" role="img" aria-label="dog">{emoji}</span>
+      </div>
+    );
+  };
+
+  // Animaciones personalizadas CSS
+  const customStyles = `
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+      20%, 40%, 60%, 80% { transform: translateX(10px); }
+    }
+    @keyframes pop-sipo {
+      0% { transform: scale(0) rotate(-45deg); opacity: 0; }
+      50% { transform: scale(1.3) rotate(10deg); opacity: 1; }
+      70% { transform: scale(0.9) rotate(-5deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+    @keyframes pop-fome {
+      0% { transform: scale(0); opacity: 0; }
+      50% { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .animate-shake {
+      animation: shake 0.8s cubic-bezier(.36,.07,.19,.97) both;
+    }
+    .animate-sipo {
+      animation: pop-sipo 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    .animate-fome {
+      animation: pop-fome 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    .perspective-1000 {
+      perspective: 1000px;
+    }
+    .transform-style-3d {
+      transform-style: preserve-3d;
+    }
+    .backface-hidden {
+      backface-visibility: hidden;
+    }
+    .rotate-y-180 {
+      transform: rotateY(180deg);
+    }
+  `;
+
+  return (
+    <div className="min-h-screen bg-sky-50 font-sans flex flex-col items-center justify-center p-4 selection:bg-amber-200">
+      <style>{customStyles}</style>
+
+      {/* Header */}
+      <div className="w-full max-w-md flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-md">
+        <div className="flex items-center gap-2 text-amber-600 font-bold">
+          <Trophy size={24} />
+          <span>Nivel {gameState === 'menu' ? '-' : level}/{TOTAL_LEVELS}</span>
+        </div>
+        <div className="text-2xl font-black text-slate-700">
+          {score} pts
+        </div>
+        <div className="flex items-center gap-2 text-rose-500 font-bold">
+          <Heart size={24} fill="currentColor" />
+          <span>{gameState === 'gameover' ? 0 : 1}</span>
+        </div>
+      </div>
+
+      {/* Main Game Area */}
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden relative min-h-[500px] flex flex-col">
+        
+        {/* Scene: Dog & Message */}
+        <div className="bg-sky-100 p-8 flex flex-col items-center justify-center border-b-4 border-sky-200 h-64 transition-colors duration-500 relative overflow-visible"
+             style={{ backgroundColor: dogStatus === 'sick' ? '#f0fdf4' : '' }}>
+          
+          {/* SIPO Animation Overlay */}
+          {showSipo && (
+            <div className="absolute top-4 right-10 z-50 animate-sipo pointer-events-none">
+              <span className="text-6xl font-black text-amber-500 drop-shadow-xl select-none"
+                    style={{ 
+                      textShadow: '3px 3px 0px white, -1px -1px 0 #fff',
+                      WebkitTextStroke: '2px white'
+                    }}>
+                ¡SIPO!
+              </span>
+            </div>
+          )}
+
+          <div className="mb-4">
+            {renderDog()}
+          </div>
+          <p className={`text-center font-bold text-lg px-4 py-2 rounded-full shadow-sm 
+            ${dogStatus === 'sick' ? 'bg-red-100 text-red-600' : 
+              dogStatus === 'eating' ? 'bg-green-100 text-green-700' : 'bg-white text-slate-600'}`}>
+            {message || "¡Hola! Tengo hambre."}
+          </p>
+        </div>
+
+        {/* Game Board / Screens */}
+        <div className="flex-1 p-6 bg-slate-50 flex items-center justify-center">
+          
+          {gameState === 'menu' && (
+            <div className="text-center space-y-4">
+              <h1 className="text-3xl font-black text-amber-600 mb-2">La Cena del Perrito</h1>
+              <p className="text-slate-600 mb-6">
+                Elige una caja con comida buena.<br/>
+                ¡Cuidado! Una caja tiene comida podrida.<br/>
+                <span className="text-sm font-semibold text-rose-500">Cada nivel hay menos cajas... ¡Más riesgo!</span>
+              </p>
+              <button 
+                onClick={startGame}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-xl font-bold py-4 px-12 rounded-full shadow-lg transform transition active:scale-95 flex items-center gap-2 mx-auto"
+              >
+                <Bone className="animate-spin-slow" /> Jugar
+              </button>
+            </div>
+          )}
+
+          {(gameState === 'playing' || gameState === 'processing') && (
+            <div className="grid gap-4 w-full" 
+                 style={{ 
+                   gridTemplateColumns: `repeat(${boxes.length > 4 ? 3 : boxes.length > 2 ? 2 : boxes.length}, 1fr)` 
+                 }}>
+              {boxes.map((box) => (
+                <button
+                  key={box.id}
+                  disabled={box.isOpen || gameState === 'processing'}
+                  onClick={() => handleBoxClick(box.id)}
+                  className={`relative aspect-square rounded-xl shadow-md transition-all duration-300 transform
+                    ${box.isOpen ? 'rotate-y-180' : 'hover:-translate-y-1 hover:shadow-lg bg-amber-200 border-b-4 border-amber-400 cursor-pointer'}
+                  `}
+                  style={{ perspective: '1000px' }}
+                >
+                  {/* Front of box (Closed) */}
+                  {!box.isOpen && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-4xl">📦</div>
+                    </div>
+                  )}
+
+                  {/* Back of box (Open) */}
+                  {box.isOpen && (
+                    <div className={`absolute inset-0 rounded-xl flex items-center justify-center border-4 
+                      ${box.content === 'poison' ? 'bg-red-100 border-red-400' : 'bg-green-100 border-green-400'}`}>
+                      <div className="text-4xl animate-bounce">
+                        {box.content === 'poison' ? <Skull className="text-red-600 w-10 h-10" /> : <Bone className="text-amber-700 w-10 h-10" />}
+                      </div>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {gameState === 'gameover' && (
+            <div className="text-center relative">
+              {/* Texto FOME gigante animado */}
+              {showFome && (
+                <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+                  <div className="animate-fome">
+                    <h1 className="text-9xl font-black text-green-500 drop-shadow-2xl"
+                        style={{
+                          textShadow: '5px 5px 0px rgba(5, 150, 105, 0.8), 10px 10px 20px rgba(0, 0, 0, 0.5)',
+                          WebkitTextStroke: '3px #059669'
+                        }}>
+                      FOME
+                    </h1>
+                  </div>
+                </div>
+              )}
+
+              <h2 className="text-3xl font-bold text-red-500 mb-2">🤮</h2>
+              <p className="text-slate-600 mb-6">El perrito comió algo malo.</p>
+              <div className="bg-white p-4 rounded-xl shadow-inner mb-6">
+                <p className="text-sm text-slate-400 uppercase tracking-wide">Puntuación Final</p>
+                <p className="text-4xl font-black text-slate-700">{score}</p>
+              </div>
+              <button
+                onClick={startGame}
+                className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition active:scale-95 flex items-center gap-2 mx-auto"
+              >
+                <RefreshCcw size={20} /> Intentar de nuevo
+              </button>
+            </div>
+          )}
+
+          {gameState === 'victory' && (
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-green-500 mb-2">¡Panza Llena! 🎉</h2>
+              <p className="text-slate-600 mb-6">¡Completaste todos los niveles!</p>
+              <div className="bg-yellow-50 p-6 rounded-xl border-2 border-yellow-200 shadow-sm mb-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-2 opacity-10">
+                  <Trophy size={100} />
+                </div>
+                <p className="text-sm text-yellow-600 uppercase tracking-wide font-bold">Puntuación Total</p>
+                <p className="text-5xl font-black text-amber-500">{score}</p>
+              </div>
+              <button 
+                onClick={startGame}
+                className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition active:scale-95 mx-auto"
+              >
+                Jugar otra vez
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <p className="mt-6 text-slate-400 text-sm font-medium">
+        Juego creado para probar tu suerte 🍀
+      </p>
+    </div>
+  );
+}
