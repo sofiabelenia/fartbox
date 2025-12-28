@@ -240,7 +240,7 @@ export default function App() {
   const handleTouchEnd = () => { isScratchingRef.current = false; };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 font-sans p-4 select-none touch-none">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 font-sans p-4 select-none">
       
       {/* Header */}
       <div className="mb-4 text-center w-full max-w-[800px]">
@@ -290,9 +290,9 @@ export default function App() {
               Rasguña el sofá cuando no haya moros en la costa. 
               Si la luz te toca mientras rasguñas... ¡Pierdes!
             </p>
-            <button 
+            <button
               onClick={startGame}
-              className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 px-10 rounded-full text-2xl transform transition hover:scale-105 active:scale-95 shadow-lg"
+              className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 px-10 rounded-full text-2xl transform transition hover:scale-105 active:scale-95 shadow-lg touch-auto cursor-pointer"
             >
               Jugar
             </button>
