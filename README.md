@@ -14,6 +14,12 @@ npm run dev
 
 Abre [http://localhost:5178](http://localhost:5178) en tu navegador.
 
+## 🌐 Jugar Online
+
+**Juega ahora en:** https://sofiabelenia.github.io/fartbox/
+
+Los juegos están desplegados automáticamente en GitHub Pages.
+
 ## 🎯 Juegos Disponibles
 
 ### Juegos React (Interactivos)
@@ -125,7 +131,18 @@ npm run preview  # Preview del build
 
 ## 📦 Despliegue
 
-Para construir el proyecto para producción:
+### GitHub Pages (Automático)
+
+El proyecto se despliega automáticamente en GitHub Pages cuando haces push a la rama `main`. El workflow de GitHub Actions:
+1. Instala las dependencias
+2. Construye el proyecto
+3. Despliega a GitHub Pages
+
+**URL del sitio:** https://sofiabelenia.github.io/fartbox/
+
+### Despliegue Manual
+
+Para construir el proyecto localmente:
 
 ```bash
 npm run build
