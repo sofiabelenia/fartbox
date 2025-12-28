@@ -76,6 +76,15 @@ const games = [
     color: 'from-purple-600 to-pink-600',
     type: 'html',
     path: '/peos.html'
+  },
+  {
+    id: 'dance-battle',
+    title: 'Navidad Battle',
+    description: 'Santa vs Grinch en batalla de dados épica',
+    emoji: '🎲',
+    color: 'from-red-600 to-green-600',
+    type: 'html',
+    path: '/dance-battle.html'
   }
 ];
 

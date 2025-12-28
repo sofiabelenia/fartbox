@@ -70,6 +70,13 @@ Soundboard interactivo con efectos de sonido divertidos.
 - **Controles**: Click/Touch en los botones
 - **Objetivo**: Crea combinaciones épicas de sonidos
 
+#### 🎲 Navidad Battle
+Santa vs Grinch en una batalla de dados 1v1.
+- **Tecnología**: HTML5 + Tailwind CSS + Animate.css
+- **Controles**: ESPACIO o Click para detener dados
+- **Objetivo**: Reduce la "dignidad" del oponente a 0
+- **Mecánica**: Tira dados alternadamente, el dado más alto gana la ronda
+
 ## 🛠️ Tecnologías
 
 - **React 18** - Framework principal
@@ -100,12 +107,13 @@ game-central/
 ## 🎨 Características
 
 - ✨ Menú principal con diseño moderno
-- 🎯 8 juegos únicos y divertidos (3 React + 5 HTML5)
+- 🎯 9 juegos únicos y divertidos (3 React + 6 HTML5)
 - 📱 Diseño responsive (móvil y desktop)
 - 🔄 Navegación fluida entre juegos
 - 🎵 Efectos de sonido integrados
 - 🌈 Animaciones y efectos visuales
 - 🎮 Mezcla de juegos React interactivos y clásicos HTML5
+- 🎲 Incluye juegos de acción, puzzle, memoria y más
 
 ## 🚀 Scripts Disponibles
 
