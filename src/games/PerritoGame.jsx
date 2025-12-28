@@ -60,11 +60,12 @@ export default function App() {
 
   // Función para reproducir sonidos del final
   const playFomeSound = () => {
-    const audio1 = new Audio('/peos/fart-sound-effect-16-11093.mp3');
+    const basePath = import.meta.env.BASE_URL;
+    const audio1 = new Audio(basePath + 'peos/fart-sound-effect-16-11093.mp3');
     audio1.volume = 0.5;
     audio1.play().catch(err => console.log('Audio play failed:', err));
 
-    const audio2 = new Audio('/fome.mp4');
+    const audio2 = new Audio(basePath + 'fome.mp4');
     audio2.volume = 0.8;
     audio2.play().catch(err => console.log('Audio play failed:', err));
 
@@ -73,14 +74,16 @@ export default function App() {
 
   // Función para reproducir sonido cuando encuentra comida
   const playSipoSound = () => {
-    const audio = new Audio('/sipo/sipo.mp4');
+    const basePath = import.meta.env.BASE_URL;
+    const audio = new Audio(basePath + 'sipo/sipo.mp4');
     audio.volume = 0.7;
     audio.play().catch(err => console.log('Audio play failed:', err));
   };
 
   // Función para reproducir sonido cuando completa un nivel
   const playSipoGanadorSound = () => {
-    const audio = new Audio('/sipo/sipo-ganador.mp4');
+    const basePath = import.meta.env.BASE_URL;
+    const audio = new Audio(basePath + 'sipo/sipo-ganador.mp4');
     audio.volume = 0.8;
     audio.play().catch(err => console.log('Audio play failed:', err));
   };
