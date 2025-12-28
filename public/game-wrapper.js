@@ -31,7 +31,10 @@
   };
 
   backButton.onclick = function() {
-    window.location.href = '/';
+    // Get the base path from the current URL
+    const pathParts = window.location.pathname.split('/');
+    const basePath = pathParts.slice(0, -1).join('/') || '/';
+    window.location.href = basePath + '/';
   };
 
   // Agregar al DOM cuando esté listo

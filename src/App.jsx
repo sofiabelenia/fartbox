@@ -108,8 +108,9 @@ export default function App() {
         </div>
       );
     } else if (game.type === 'html' && game.path) {
-      // Para juegos HTML, redirigir o mostrar en iframe
-      window.location.href = game.path;
+      // Para juegos HTML, construir la ruta correcta
+      const basePath = import.meta.env.BASE_URL || '/';
+      window.location.href = basePath + game.path.substring(1); // Remove leading slash from path
       return null;
     }
   }
