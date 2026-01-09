@@ -85,6 +85,15 @@ const games = [
     color: 'from-red-600 to-green-600',
     type: 'html',
     path: '/dance-battle.html'
+  },
+  {
+    id: 'fly-swat',
+    title: "Maggu's Fly Swat",
+    description: 'Slap flies and unlock weapons - reach 1000 points!',
+    emoji: '🪰',
+    color: 'from-lime-500 to-emerald-600',
+    type: 'html',
+    path: '/fly.html'
   }
 ];
 
