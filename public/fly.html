@@ -222,6 +222,7 @@
 
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
+    <canvas id="handCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100;"></canvas>
     <div id="flash-overlay"></div>
 
     <!-- HUD -->
@@ -239,15 +240,11 @@
     </div>
 
     <!-- Start Screen -->
-    <div id="startScreen" class="ui-layer">
-        <div class="menu">
-            <h1>Maggu's<br>Fly Swat</h1>
-            <p>Help Maggu enjoy her picnic!<br>Slap the flies before they annoy her too much.</p>
-            <p style="font-size: 14px; margin-top:-20px;">
-                <b>GOAL: Reach 1000 Points!</b><br>
-                Use Power-ups & Upgrades to survive.
-            </p>
-            <button id="startBtn">PLAY</button>
+    <div id="startScreen" class="ui-layer" style="justify-content: flex-start; padding-top: 30px; pointer-events: none;">
+        <h1 style="font-size: 42px; color: #ff4444; text-shadow: 3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; margin: 0;">MAGGU<br><span style="font-size: 28px;">vs</span><br>MOSCAS</h1>
+        <div style="flex-grow: 1;"></div>
+        <div id="playBtnContainer" style="margin-bottom: 50px;">
+            <div id="playBtn" style="font-size: 36px; padding: 20px 80px; background: #ff4444; box-shadow: 0 8px 0 #aa0000; font-family: 'Fredoka One', cursive; border: none; color: white; border-radius: 50px; display: inline-block;">PLAY</div>
         </div>
     </div>
 
@@ -278,7 +275,11 @@
      */
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    
+
+    // Hand canvas (on top of everything)
+    const handCanvas = document.getElementById('handCanvas');
+    const handCtx = handCanvas.getContext('2d');
+
     // UI Elements
     const startScreen = document.getElementById('startScreen');
     const gameOverScreen = document.getElementById('gameOverScreen');
@@ -289,7 +290,7 @@
     const finalScoreDisplay = document.getElementById('finalScore');
     const finalTimeDisplay = document.getElementById('finalTime');
     const annoyanceBar = document.getElementById('annoyanceBar');
-    const startBtn = document.getElementById('startBtn');
+    const playBtn = document.getElementById('playBtn');
     const restartBtn = document.getElementById('restartBtn');
     const winRestartBtn = document.getElementById('winRestartBtn');
     const flashOverlay = document.getElementById('flash-overlay');
@@ -307,6 +308,157 @@
     
     // Modifiers
     let freezeTimer = 0;
+    let timeWarpFactor = 1; // For Time Fly boss
+    let screenShake = { x: 0, y: 0, intensity: 0 };
+
+    // Hand Debuffs
+    let handDebuffs = {
+        shaky: 0,        // Timer for shakiness
+        inverted: 0,     // Timer for inverted controls
+        delayed: 0,      // Timer for delayed reactions
+        delayBuffer: []  // Buffer for delayed input
+    };
+
+    // Audio Context for procedural sounds
+    let audioCtx = null;
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    function playBuzz(panic = false) {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(panic ? 300 : 150, audioCtx.currentTime);
+        if (panic) {
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+        }
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    }
+
+    function playThwack(heavy = false) {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(heavy ? 80 : 150, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(heavy ? 30 : 50, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(heavy ? 0.3 : 0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    }
+
+    function playZap() {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        for (let i = 0; i < 5; i++) {
+            osc.frequency.setValueAtTime(800 + Math.random() * 400, audioCtx.currentTime + i * 0.02);
+        }
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    function playBossRoar() {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+    }
+
+    function triggerScreenShake(intensity) {
+        screenShake.intensity = intensity;
+    }
+
+    // Continuous buzz sound system
+    let buzzOscillators = [];
+    let buzzGainNode = null;
+    let buzzLfoNode = null;
+
+    function initBuzzSystem() {
+        if (!audioCtx || buzzGainNode) return;
+
+        // Master gain for all buzzing
+        buzzGainNode = audioCtx.createGain();
+        buzzGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        buzzGainNode.connect(audioCtx.destination);
+
+        // LFO for wobble effect
+        buzzLfoNode = audioCtx.createOscillator();
+        buzzLfoNode.type = 'sine';
+        buzzLfoNode.frequency.setValueAtTime(8, audioCtx.currentTime);
+
+        // Create multiple oscillators for richer buzz
+        const frequencies = [120, 180, 240];
+        frequencies.forEach(freq => {
+            const osc = audioCtx.createOscillator();
+            const oscGain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            // Connect LFO to frequency for wobble
+            const lfoGain = audioCtx.createGain();
+            lfoGain.gain.setValueAtTime(10, audioCtx.currentTime);
+            buzzLfoNode.connect(lfoGain);
+            lfoGain.connect(osc.frequency);
+
+            oscGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            osc.connect(oscGain);
+            oscGain.connect(buzzGainNode);
+            osc.start();
+            buzzOscillators.push(osc);
+        });
+
+        buzzLfoNode.start();
+    }
+
+    function updateBuzzVolume() {
+        if (!buzzGainNode || !audioCtx) return;
+
+        // Count flies on screen
+        const flyCount = flies.filter(f => !f.isDead && f.x > 0 && f.x < canvas.width && f.y > 0 && f.y < canvas.height).length;
+
+        // Volume scales with fly count (0 flies = silent, 20+ flies = max volume)
+        const targetVolume = Math.min(flyCount / 15, 1) * 0.12;
+
+        // Smooth transition
+        buzzGainNode.gain.linearRampToValueAtTime(targetVolume, audioCtx.currentTime + 0.1);
+
+        // Adjust LFO speed based on fly count (more flies = more frantic)
+        if (buzzLfoNode) {
+            buzzLfoNode.frequency.linearRampToValueAtTime(5 + flyCount * 0.5, audioCtx.currentTime + 0.1);
+        }
+    }
+
+    function stopBuzzSystem() {
+        if (buzzGainNode) {
+            buzzGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+        }
+    }
 
     // Mouse/Touch Input
     const input = { x: 0, y: 0, isDown: false, clickHandled: false };
@@ -317,11 +469,14 @@
     let particles = [];
     let bonuses = [];
     let hand = null;
+    let menuHand = null;
 
     // Resizing
     function resize() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        handCanvas.width = window.innerWidth;
+        handCanvas.height = window.innerHeight;
     }
     window.addEventListener('resize', resize);
     resize();
@@ -474,12 +629,43 @@
                 createFloatingText("SWATTER UNLOCKED!", 0, 0, true);
             }
 
+            // Handle debuffs
+            let inputX = input.x;
+            let inputY = input.y;
+
+            // Inverted controls
+            if (handDebuffs.inverted > 0) {
+                inputX = canvas.width - input.x;
+                inputY = canvas.height - input.y;
+                handDebuffs.inverted--;
+            }
+
+            // Delayed reactions - buffer input
+            if (handDebuffs.delayed > 0) {
+                handDebuffs.delayBuffer.push({ x: inputX, y: inputY });
+                if (handDebuffs.delayBuffer.length > 15) {
+                    const delayed = handDebuffs.delayBuffer.shift();
+                    inputX = delayed.x;
+                    inputY = delayed.y;
+                }
+                handDebuffs.delayed--;
+                if (handDebuffs.delayed === 0) handDebuffs.delayBuffer = [];
+            }
+
             // Smooth movement (LERP)
-            this.targetX = input.x;
-            this.targetY = input.y;
-            
-            this.x += (this.targetX - this.x) * 0.2;
-            this.y += (this.targetY - this.y) * 0.2;
+            this.targetX = inputX;
+            this.targetY = inputY;
+
+            let moveSpeed = 0.2;
+            this.x += (this.targetX - this.x) * moveSpeed;
+            this.y += (this.targetY - this.y) * moveSpeed;
+
+            // Shakiness effect
+            if (handDebuffs.shaky > 0) {
+                this.x += randomRange(-8, 8);
+                this.y += randomRange(-8, 8);
+                handDebuffs.shaky--;
+            }
 
             // Rotate based on velocity for dynamic feel
             const dx = this.targetX - this.x;
@@ -624,15 +810,26 @@
                 if (this.weapon === 'SPRAY') bonus = 2;
                 if (this.weapon === 'ZAPPER') bonus = 3;
                 if (this.weapon === 'GOLDEN') bonus = 5;
-                
+
                 score += hitCount * bonus;
-                
+
+                // Play sound based on weapon
+                if (this.weapon === 'ZAPPER') {
+                    playZap();
+                } else if (this.weapon === 'GOLDEN') {
+                    playThwack(true);
+                    triggerScreenShake(15);
+                } else {
+                    playThwack(this.weapon === 'SWATTER');
+                    triggerScreenShake(this.weapon === 'SWATTER' ? 5 : 3);
+                }
+
                 if (hitCount > 1) {
                     createFloatingText("COMBO x" + hitCount + "!", this.x, this.y - 50);
                 }
                 
-                // Reduce annoyance
-                annoyance = Math.max(0, annoyance - (2 * hitCount));
+                // Reduce annoyance significantly on kills
+                annoyance = Math.max(0, annoyance - (5 * hitCount));
 
                 // Win Condition Check
                 if (score >= TARGET_SCORE) {
@@ -704,57 +901,112 @@
         }
 
         drawBeautifulHand(ctx, skin, shadow, nail) {
-            // Palm
-            ctx.fillStyle = skin;
+            // Palm - more delicate oval shape
+            let palmGrad = ctx.createRadialGradient(0, 40, 5, 0, 40, 50);
+            palmGrad.addColorStop(0, skin);
+            palmGrad.addColorStop(1, shadow);
+            ctx.fillStyle = palmGrad;
             ctx.beginPath();
-            ctx.ellipse(0, 40, 35, 45, 0, 0, Math.PI * 2);
+            ctx.ellipse(0, 45, 32, 40, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // Fingers
+            // Slender feminine fingers - longer and thinner
             const fingers = [
-                {x: -28, y: -5, w: 14, h: 50, ang: -0.2},
-                {x: -10, y: -20, w: 16, h: 65, ang: -0.1},
-                {x: 10, y: -20, w: 16, h: 70, ang: 0},
-                {x: 28, y: -5, w: 15, h: 60, ang: 0.1}
+                {x: -25, y: 5, w: 11, h: 55, ang: -0.15},   // Pinky
+                {x: -9, y: -15, w: 12, h: 72, ang: -0.08},  // Ring finger
+                {x: 9, y: -18, w: 12, h: 78, ang: 0},       // Middle finger
+                {x: 25, y: -8, w: 11, h: 65, ang: 0.1}      // Index finger
             ];
 
-            fingers.forEach(f => {
+            fingers.forEach((f, idx) => {
                 ctx.save();
                 ctx.translate(f.x, f.y);
                 ctx.rotate(f.ang);
-                ctx.fillStyle = skin;
+
+                // Finger with gradient for roundness
+                let fingerGrad = ctx.createLinearGradient(-f.w/2, 0, f.w/2, 0);
+                fingerGrad.addColorStop(0, shadow);
+                fingerGrad.addColorStop(0.3, skin);
+                fingerGrad.addColorStop(0.7, skin);
+                fingerGrad.addColorStop(1, shadow);
+                ctx.fillStyle = fingerGrad;
+
+                // Smoother, tapered finger shape
                 ctx.beginPath();
                 ctx.moveTo(-f.w/2, 0);
-                ctx.lineTo(-f.w/2 + 2, -f.h);
-                ctx.quadraticCurveTo(0, -f.h - 5, f.w/2 - 2, -f.h);
-                ctx.lineTo(f.w/2, 0);
+                ctx.quadraticCurveTo(-f.w/2 - 1, -f.h * 0.5, -f.w/2 + 2, -f.h + 8);
+                ctx.quadraticCurveTo(0, -f.h - 3, f.w/2 - 2, -f.h + 8);
+                ctx.quadraticCurveTo(f.w/2 + 1, -f.h * 0.5, f.w/2, 0);
                 ctx.fill();
-                ctx.fillStyle = nail;
+
+                // Knuckle subtle highlight
+                ctx.fillStyle = 'rgba(255,255,255,0.15)';
                 ctx.beginPath();
-                ctx.ellipse(0, -f.h + 5, f.w/3, f.w/2.5, 0, 0, Math.PI*2);
+                ctx.ellipse(0, -f.h * 0.3, f.w/3, 4, 0, 0, Math.PI*2);
                 ctx.fill();
-                ctx.fillStyle = 'rgba(255,255,255,0.6)';
+
+                // Elegant almond-shaped nail with gradient
+                let nailGrad = ctx.createLinearGradient(0, -f.h + 12, 0, -f.h - 5);
+                nailGrad.addColorStop(0, nail);
+                nailGrad.addColorStop(0.5, '#ff8fa3');
+                nailGrad.addColorStop(1, '#ffb6c1');
+                ctx.fillStyle = nailGrad;
                 ctx.beginPath();
-                ctx.ellipse(-2, -f.h + 4, 1.5, 3, 0.2, 0, Math.PI*2);
+                // Almond shape - pointed tip
+                ctx.moveTo(-f.w/3, -f.h + 12);
+                ctx.quadraticCurveTo(-f.w/3 - 1, -f.h + 2, 0, -f.h - 8);
+                ctx.quadraticCurveTo(f.w/3 + 1, -f.h + 2, f.w/3, -f.h + 12);
+                ctx.quadraticCurveTo(0, -f.h + 10, -f.w/3, -f.h + 12);
                 ctx.fill();
+
+                // Nail shine
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.beginPath();
+                ctx.ellipse(-1, -f.h + 2, 2, 5, 0.1, 0, Math.PI*2);
+                ctx.fill();
+
                 ctx.restore();
             });
 
-            // Thumb
+            // Elegant thumb
             ctx.save();
-            ctx.translate(35, 60);
-            ctx.rotate(0.6);
-            ctx.fillStyle = skin;
+            ctx.translate(33, 55);
+            ctx.rotate(0.5);
+
+            // Thumb gradient
+            let thumbGrad = ctx.createLinearGradient(-7, 0, 7, 0);
+            thumbGrad.addColorStop(0, shadow);
+            thumbGrad.addColorStop(0.3, skin);
+            thumbGrad.addColorStop(0.7, skin);
+            thumbGrad.addColorStop(1, shadow);
+            ctx.fillStyle = thumbGrad;
+
             ctx.beginPath();
-            ctx.moveTo(-8, 0);
-            ctx.lineTo(-8, -45);
-            ctx.quadraticCurveTo(0, -52, 8, -45);
-            ctx.lineTo(8, 0);
+            ctx.moveTo(-7, 0);
+            ctx.quadraticCurveTo(-8, -25, -6, -42);
+            ctx.quadraticCurveTo(0, -50, 6, -42);
+            ctx.quadraticCurveTo(8, -25, 7, 0);
             ctx.fill();
-            ctx.fillStyle = nail;
+
+            // Thumb nail - almond shape
+            let thumbNailGrad = ctx.createLinearGradient(0, -35, 0, -48);
+            thumbNailGrad.addColorStop(0, nail);
+            thumbNailGrad.addColorStop(0.5, '#ff8fa3');
+            thumbNailGrad.addColorStop(1, '#ffb6c1');
+            ctx.fillStyle = thumbNailGrad;
             ctx.beginPath();
-            ctx.ellipse(0, -38, 6, 7, 0, 0, Math.PI*2);
+            ctx.moveTo(-5, -35);
+            ctx.quadraticCurveTo(-5, -42, 0, -48);
+            ctx.quadraticCurveTo(5, -42, 5, -35);
+            ctx.quadraticCurveTo(0, -34, -5, -35);
             ctx.fill();
+
+            // Thumb nail shine
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.beginPath();
+            ctx.ellipse(-1, -40, 1.5, 4, 0.1, 0, Math.PI*2);
+            ctx.fill();
+
             ctx.restore();
         }
 
@@ -876,19 +1128,33 @@
         }
 
         drawCurledFingers(ctx, skin, nail) {
+             // Delicate palm grip
              ctx.fillStyle = skin;
              ctx.beginPath();
-             ctx.ellipse(0, 50, 35, 35, 0, 0, Math.PI * 2);
+             ctx.ellipse(0, 50, 30, 32, 0, 0, Math.PI * 2);
              ctx.fill();
-             const knuckles = [-25, -8, 8, 25];
+
+             // More elegant curled fingers
+             const knuckles = [-22, -7, 7, 22];
              knuckles.forEach((kx, i) => {
                  ctx.fillStyle = skin;
                  ctx.beginPath();
-                 ctx.ellipse(kx, 25 - Math.abs(kx)*0.1, 10, 12, 0, 0, Math.PI*2);
+                 ctx.ellipse(kx, 28 - Math.abs(kx)*0.1, 8, 10, 0, 0, Math.PI*2);
                  ctx.fill();
-                 ctx.fillStyle = nail;
+
+                 // Almond nails with gradient
+                 let nailGrad = ctx.createLinearGradient(kx, 32, kx, 38);
+                 nailGrad.addColorStop(0, nail);
+                 nailGrad.addColorStop(1, '#ffb6c1');
+                 ctx.fillStyle = nailGrad;
                  ctx.beginPath();
-                 ctx.ellipse(kx, 28 - Math.abs(kx)*0.1, 6, 4, 0, 0, Math.PI*2);
+                 ctx.ellipse(kx, 32 - Math.abs(kx)*0.1, 5, 6, 0, 0, Math.PI*2);
+                 ctx.fill();
+
+                 // Nail shine
+                 ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                 ctx.beginPath();
+                 ctx.ellipse(kx - 1, 30 - Math.abs(kx)*0.1, 1.5, 2, 0, 0, Math.PI*2);
                  ctx.fill();
              });
         }
@@ -1027,6 +1293,10 @@
         die(zapped = false, holy = false) {
             this.isDead = true;
             let scale = this.isBig ? 2 : 1;
+            playBuzz(true); // Panic buzz on death
+
+            // Reduce annoyance when fly is killed
+            annoyance = Math.max(0, annoyance - (this.isBig ? 15 : 5));
 
             if (holy) {
                  splatters.push(new Splatter(this.x, this.y, '#ffd700', scale));
@@ -1041,6 +1311,540 @@
                     particles.push(new Particle(this.x, this.y, '#5c1919', randomRange(2,5)));
                 }
             }
+        }
+    }
+
+    // ==================== BOSS FLY CLASSES ====================
+
+    // THE QUEEN - Spawns minion eggs that hatch into flies
+    class QueenFly {
+        constructor() {
+            this.x = Math.random() < 0.5 ? -50 : canvas.width + 50;
+            this.y = canvas.height * 0.3 + Math.random() * canvas.height * 0.4;
+            this.hp = 15;
+            this.maxHp = 15;
+            this.scaleMult = 3.5;
+            this.speed = 1.5;
+            this.vx = this.x < 0 ? 1 : -1;
+            this.vy = 0;
+            this.angle = 0;
+            this.wingState = 0;
+            this.isDead = false;
+            this.hitFlash = 0;
+            this.bossType = 'QUEEN';
+            this.eggTimer = 0;
+            this.eggs = []; // Track eggs spawned by this queen
+            playBossRoar();
+            createFloatingText("THE QUEEN APPROACHES!", canvas.width/2, 100, true, '#9b59b6');
+        }
+
+        update() {
+            if (this.isDead) return;
+            if (freezeTimer > 0) {
+                this.wingState += 0.2;
+                return;
+            }
+
+            // Slow hovering movement
+            this.x += this.vx * this.speed * timeWarpFactor;
+            this.y += Math.sin(frames * 0.02) * 1.5;
+            this.wingState += 0.8;
+
+            // Bounce off edges
+            if (this.x < 50 || this.x > canvas.width - 50) this.vx *= -1;
+
+            // Spawn eggs periodically
+            this.eggTimer++;
+            if (this.eggTimer > 180) { // Every 3 seconds
+                this.eggTimer = 0;
+                const egg = new QueenEgg(this.x, this.y + 30);
+                this.eggs.push(egg);
+                flies.push(egg);
+            }
+
+            // Attack hand if close
+            if (hand) {
+                const dx = hand.x - this.x;
+                const dy = hand.y - this.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < 80) {
+                    // Bite! Apply debuff
+                    handDebuffs.shaky = 90;
+                    createFloatingText("BITTEN!", hand.x, hand.y - 50, false, '#9b59b6');
+                    triggerScreenShake(10);
+                }
+            }
+
+            annoyance += 0.08;
+        }
+
+        takeDamage(amount, weaponType) {
+            this.hp -= amount;
+            this.hitFlash = 8;
+            triggerScreenShake(5);
+            if (this.hp <= 0) {
+                this.die(weaponType === 'ZAPPER', weaponType === 'GOLDEN');
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.scale(this.scaleMult, this.scaleMult);
+
+            // Glow aura
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#9b59b6';
+
+            // Wings (larger, more regal)
+            ctx.fillStyle = 'rgba(200, 150, 255, 0.6)';
+            const wingOffset = Math.sin(this.wingState) * 8;
+            ctx.beginPath();
+            ctx.ellipse(-12 - wingOffset, 5, 12, 18, -0.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(12 + wingOffset, 5, 12, 18, 0.5, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+
+            // Body (purple, royal)
+            ctx.fillStyle = this.hitFlash > 0 ? '#fff' : '#6b2d8b';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 8, 14, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // Stripes
+            ctx.fillStyle = '#4a1d6b';
+            for (let i = -8; i < 10; i += 4) {
+                ctx.fillRect(-6, i, 12, 2);
+            }
+
+            // Crown
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath();
+            ctx.moveTo(-8, -12);
+            ctx.lineTo(-6, -20);
+            ctx.lineTo(-3, -14);
+            ctx.lineTo(0, -22);
+            ctx.lineTo(3, -14);
+            ctx.lineTo(6, -20);
+            ctx.lineTo(8, -12);
+            ctx.closePath();
+            ctx.fill();
+
+            // Crown gems
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.arc(0, -16, 2, 0, Math.PI*2);
+            ctx.fill();
+
+            // Eyes
+            ctx.fillStyle = this.hitFlash > 0 ? '#fff' : '#e74c3c';
+            ctx.beginPath();
+            ctx.arc(-4, -6, 4, 0, Math.PI*2);
+            ctx.arc(4, -6, 4, 0, Math.PI*2);
+            ctx.fill();
+
+            // HP Bar
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-15, -30, 30, 4);
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(-15, -30, 30 * (this.hp / this.maxHp), 4);
+
+            ctx.restore();
+        }
+
+        die(zapped, holy) {
+            this.isDead = true;
+            playBossRoar();
+            triggerScreenShake(20);
+            // Kill all eggs when queen dies
+            this.eggs.forEach(egg => { if (!egg.isDead) egg.isDead = true; });
+            splatters.push(new Splatter(this.x, this.y, '#9b59b6', 3));
+            for (let i = 0; i < 20; i++) {
+                particles.push(new Particle(this.x, this.y, '#9b59b6', randomRange(5, 15), 0, false, 15));
+            }
+            score += 50;
+            createFloatingText("+50 QUEEN SLAIN!", this.x, this.y - 50, false, '#ffd700');
+        }
+    }
+
+    // Queen's Egg - hatches into flies if not destroyed
+    class QueenEgg {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.hp = 2;
+            this.scaleMult = 1.5;
+            this.isDead = false;
+            this.hitFlash = 0;
+            this.hatchTimer = 180; // 3 seconds to hatch
+            this.wobble = 0;
+            this.bossType = 'EGG';
+        }
+
+        update() {
+            if (this.isDead) return;
+            this.wobble += 0.2;
+            this.x += Math.sin(this.wobble) * 0.5;
+
+            this.hatchTimer--;
+            if (this.hatchTimer <= 0) {
+                // Hatch into 3 flies!
+                for (let i = 0; i < 3; i++) {
+                    const fly = new Fly();
+                    fly.x = this.x + randomRange(-20, 20);
+                    fly.y = this.y + randomRange(-20, 20);
+                    flies.push(fly);
+                }
+                this.isDead = true;
+                createFloatingText("HATCHED!", this.x, this.y, false, '#9b59b6');
+            }
+        }
+
+        takeDamage(amount, weaponType) {
+            this.hp -= amount;
+            this.hitFlash = 5;
+            if (this.hp <= 0) {
+                this.isDead = true;
+                splatters.push(new Splatter(this.x, this.y, '#ffffaa', 1));
+                score += 5;
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.scale(this.scaleMult, this.scaleMult);
+            ctx.rotate(Math.sin(this.wobble * 2) * 0.1);
+
+            // Egg shape
+            ctx.fillStyle = this.hitFlash > 0 ? '#fff' : '#ffffcc';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 8, 12, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // Pulsing glow when about to hatch
+            if (this.hatchTimer < 60) {
+                ctx.strokeStyle = `rgba(155, 89, 182, ${0.5 + Math.sin(this.wobble * 3) * 0.5})`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+    }
+
+    // THE MAGNET - Pulls the hand toward it
+    class MagnetFly {
+        constructor() {
+            this.x = canvas.width / 2 + randomRange(-200, 200);
+            this.y = canvas.height / 2 + randomRange(-100, 100);
+            this.hp = 12;
+            this.maxHp = 12;
+            this.scaleMult = 3;
+            this.isDead = false;
+            this.hitFlash = 0;
+            this.bossType = 'MAGNET';
+            this.pulsePhase = 0;
+            this.magnetStrength = 0;
+            playBossRoar();
+            createFloatingText("THE MAGNET APPEARS!", canvas.width/2, 100, true, '#3498db');
+        }
+
+        update() {
+            if (this.isDead) return;
+            if (freezeTimer > 0) return;
+
+            this.pulsePhase += 0.1;
+
+            // Slowly drift
+            this.x += Math.sin(frames * 0.01) * 0.5;
+            this.y += Math.cos(frames * 0.015) * 0.5;
+
+            // Magnetic pull on hand
+            if (hand) {
+                const dx = this.x - hand.x;
+                const dy = this.y - hand.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                // Stronger pull when closer, pulsing
+                this.magnetStrength = (1 - Math.min(dist / 400, 1)) * (0.5 + Math.sin(this.pulsePhase) * 0.3);
+
+                if (dist > 50) {
+                    hand.x += (dx / dist) * this.magnetStrength * 8 * timeWarpFactor;
+                    hand.y += (dy / dist) * this.magnetStrength * 8 * timeWarpFactor;
+                }
+
+                // Shock if too close
+                if (dist < 60) {
+                    handDebuffs.inverted = 120; // 2 seconds inverted
+                    createFloatingText("MAGNETIZED!", hand.x, hand.y - 50, false, '#3498db');
+                    triggerScreenShake(8);
+                }
+            }
+
+            annoyance += 0.05;
+        }
+
+        takeDamage(amount, weaponType) {
+            this.hp -= amount;
+            this.hitFlash = 8;
+            triggerScreenShake(5);
+            if (this.hp <= 0) {
+                this.die(weaponType === 'ZAPPER', weaponType === 'GOLDEN');
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.scale(this.scaleMult, this.scaleMult);
+
+            // Magnetic field rings
+            const pulse = Math.sin(this.pulsePhase) * 0.3 + 0.7;
+            ctx.strokeStyle = `rgba(52, 152, 219, ${pulse * 0.3})`;
+            ctx.lineWidth = 2;
+            for (let r = 20; r < 60; r += 15) {
+                ctx.beginPath();
+                ctx.arc(0, 0, r + Math.sin(this.pulsePhase + r) * 5, 0, Math.PI*2);
+                ctx.stroke();
+            }
+
+            // Body (metallic blue)
+            let bodyGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 12);
+            bodyGrad.addColorStop(0, '#5dade2');
+            bodyGrad.addColorStop(0.5, '#2980b9');
+            bodyGrad.addColorStop(1, '#1a5276');
+            ctx.fillStyle = this.hitFlash > 0 ? '#fff' : bodyGrad;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 10, 14, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // Magnet poles (red and blue ends)
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.arc(-8, 0, 5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#3498db';
+            ctx.beginPath();
+            ctx.arc(8, 0, 5, 0, Math.PI*2);
+            ctx.fill();
+
+            // N and S labels
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 6px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('N', -8, 2);
+            ctx.fillText('S', 8, 2);
+
+            // Eyes (electric)
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(-3, -8, 3, 0, Math.PI*2);
+            ctx.arc(3, -8, 3, 0, Math.PI*2);
+            ctx.fill();
+
+            // HP Bar
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-15, -25, 30, 4);
+            ctx.fillStyle = '#3498db';
+            ctx.fillRect(-15, -25, 30 * (this.hp / this.maxHp), 4);
+
+            ctx.restore();
+
+            // Draw pull line to hand
+            if (hand && this.magnetStrength > 0.1) {
+                ctx.strokeStyle = `rgba(52, 152, 219, ${this.magnetStrength})`;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(hand.x, hand.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        die(zapped, holy) {
+            this.isDead = true;
+            playZap();
+            triggerScreenShake(15);
+            splatters.push(new Splatter(this.x, this.y, '#3498db', 3));
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(this.x, this.y, '#3498db', randomRange(3, 10), 0, true));
+            }
+            score += 40;
+            createFloatingText("+40 MAGNET DESTROYED!", this.x, this.y - 50, false, '#ffd700');
+        }
+    }
+
+    // THE TIME FLY - Warps time around itself
+    class TimeFly {
+        constructor() {
+            this.x = canvas.width / 2;
+            this.y = canvas.height / 2;
+            this.hp = 10;
+            this.maxHp = 10;
+            this.scaleMult = 2.8;
+            this.isDead = false;
+            this.hitFlash = 0;
+            this.bossType = 'TIME';
+            this.clockAngle = 0;
+            this.warpTimer = 0;
+            this.speed = 4; // It's fast!
+            this.vx = randomRange(-1, 1);
+            this.vy = randomRange(-1, 1);
+            playBossRoar();
+            createFloatingText("TIME FLY DETECTED!", canvas.width/2, 100, true, '#f39c12');
+        }
+
+        update() {
+            if (this.isDead) return;
+            if (freezeTimer > 0) {
+                this.clockAngle += 0.05;
+                return;
+            }
+
+            this.clockAngle += 0.2;
+
+            // Time warp effect - changes global time factor
+            this.warpTimer++;
+            if (this.warpTimer > 120) {
+                this.warpTimer = 0;
+                // Randomly speed up or slow down everything else
+                timeWarpFactor = Math.random() < 0.5 ? 0.3 : 2.5;
+                createFloatingText(timeWarpFactor < 1 ? "SLOW-MO!" : "FAST FORWARD!", this.x, this.y - 40, false, '#f39c12');
+                setTimeout(() => { timeWarpFactor = 1; }, 2000);
+            }
+
+            // This fly moves at normal speed regardless of time warp
+            this.x += this.vx * this.speed;
+            this.y += this.vy * this.speed;
+
+            // Bounce off walls
+            if (this.x < 50 || this.x > canvas.width - 50) this.vx *= -1;
+            if (this.y < 50 || this.y > canvas.height - 50) this.vy *= -1;
+
+            // Random direction changes
+            if (Math.random() < 0.02) {
+                this.vx = randomRange(-1, 1);
+                this.vy = randomRange(-1, 1);
+            }
+
+            // Touch causes delayed reactions
+            if (hand) {
+                const dx = hand.x - this.x;
+                const dy = hand.y - this.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < 70) {
+                    handDebuffs.delayed = 180; // 3 seconds delay
+                    createFloatingText("TIME LAGGED!", hand.x, hand.y - 50, false, '#f39c12');
+                    triggerScreenShake(6);
+                }
+            }
+
+            annoyance += 0.04;
+        }
+
+        takeDamage(amount, weaponType) {
+            this.hp -= amount;
+            this.hitFlash = 8;
+            triggerScreenShake(4);
+            if (this.hp <= 0) {
+                this.die(weaponType === 'ZAPPER', weaponType === 'GOLDEN');
+            }
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.scale(this.scaleMult, this.scaleMult);
+
+            // Time distortion effect (warped circles)
+            ctx.strokeStyle = 'rgba(243, 156, 18, 0.3)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 3; i++) {
+                ctx.save();
+                ctx.rotate(this.clockAngle + i * 0.5);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 20 + i * 8, 15 + i * 5, 0, 0, Math.PI*2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Body (golden/bronze)
+            let bodyGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 12);
+            bodyGrad.addColorStop(0, '#f9e79f');
+            bodyGrad.addColorStop(0.5, '#f39c12');
+            bodyGrad.addColorStop(1, '#935116');
+            ctx.fillStyle = this.hitFlash > 0 ? '#fff' : bodyGrad;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 10, 12, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // Clock face on body
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(0, 0, 6, 0, Math.PI*2);
+            ctx.fill();
+
+            // Clock hands
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(this.clockAngle) * 4, Math.sin(this.clockAngle) * 4);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(this.clockAngle * 0.1) * 3, Math.sin(this.clockAngle * 0.1) * 3);
+            ctx.stroke();
+
+            // Eyes
+            ctx.fillStyle = this.hitFlash > 0 ? '#fff' : '#f39c12';
+            ctx.beginPath();
+            ctx.arc(-4, -8, 3, 0, Math.PI*2);
+            ctx.arc(4, -8, 3, 0, Math.PI*2);
+            ctx.fill();
+
+            // HP Bar
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-15, -22, 30, 4);
+            ctx.fillStyle = '#f39c12';
+            ctx.fillRect(-15, -22, 30 * (this.hp / this.maxHp), 4);
+
+            ctx.restore();
+        }
+
+        die(zapped, holy) {
+            this.isDead = true;
+            timeWarpFactor = 1; // Reset time
+            playBossRoar();
+            triggerScreenShake(12);
+            splatters.push(new Splatter(this.x, this.y, '#f39c12', 2.5));
+            for (let i = 0; i < 12; i++) {
+                particles.push(new Particle(this.x, this.y, '#f39c12', randomRange(3, 8), 0, false, 12));
+            }
+            score += 35;
+            createFloatingText("+35 TIME RESTORED!", this.x, this.y - 50, false, '#ffd700');
+        }
+    }
+
+    // Boss spawning helper
+    let bossesSpawned = 0;
+    let lastBossScore = 0;
+
+    function trySpawnBoss() {
+        // Spawn a boss every 200 points, max 3 on screen
+        const activeBosses = flies.filter(f => f.bossType).length;
+        if (score >= lastBossScore + 200 && activeBosses < 2) {
+            lastBossScore = score;
+            bossesSpawned++;
+            const bossTypes = [QueenFly, MagnetFly, TimeFly];
+            const BossClass = bossTypes[bossesSpawned % bossTypes.length];
+            flies.push(new BossClass());
         }
     }
 
@@ -1166,6 +1970,9 @@
      * Game Loop
      */
     function startGame() {
+        // Initialize audio on first interaction
+        initAudio();
+
         score = 0;
         kills = 0;
         annoyance = 0;
@@ -1174,22 +1981,33 @@
         particles = [];
         bonuses = [];
         freezeTimer = 0;
+        timeWarpFactor = 1;
+        bossesSpawned = 0;
+        lastBossScore = 0;
+        screenShake = { x: 0, y: 0, intensity: 0 };
+        handDebuffs = { shaky: 0, inverted: 0, delayed: 0, delayBuffer: [] };
         hand = new Hand();
         input.x = canvas.width/2;
         input.y = canvas.height/2;
+        input.isDown = false;
+        input.clickHandled = false;
 
         startTime = Date.now();
-        
+
         startScreen.classList.add('hidden');
         gameOverScreen.classList.add('hidden');
         winScreen.classList.add('hidden');
         hud.classList.remove('hidden');
-        
+
+        // Initialize buzz sound system
+        initBuzzSystem();
+
         gameState = 'PLAYING';
     }
 
     function endGame() {
         gameState = 'GAMEOVER';
+        stopBuzzSystem();
         hud.classList.add('hidden');
         gameOverScreen.classList.remove('hidden');
         finalScoreDisplay.innerText = score;
@@ -1197,6 +2015,7 @@
 
     function winGame() {
         gameState = 'WIN';
+        stopBuzzSystem();
         hud.classList.add('hidden');
         winScreen.classList.remove('hidden');
         let elapsed = (Date.now() - startTime) / 1000;
@@ -1207,65 +2026,175 @@
         // Draw a giant stylized fly face in the background
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
-        
+
         // Bobbing animation
         const bob = Math.sin(frames * 0.02) * 20;
+        const wingFlap = Math.sin(frames * 0.3) * 15;
 
         ctx.save();
-        ctx.translate(cx, cy + bob);
-        ctx.scale(2, 2); // Make it huge
+        ctx.translate(cx, cy + bob - 30);
+        ctx.scale(2.5, 2.5); // Make it huge
 
-        // Head
-        ctx.fillStyle = '#222';
+        // Glow effect behind fly
+        ctx.shadowBlur = 40;
+        ctx.shadowColor = 'rgba(200, 0, 0, 0.5)';
+
+        // Wings (behind head)
+        ctx.fillStyle = 'rgba(180, 220, 255, 0.4)';
+        ctx.strokeStyle = 'rgba(100, 150, 200, 0.6)';
+        ctx.lineWidth = 2;
+        // Left wing
+        ctx.save();
+        ctx.translate(-80, -20);
+        ctx.rotate(-0.3 + wingFlap * 0.02);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 70, 35, -0.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+        // Wing veins
+        ctx.strokeStyle = 'rgba(100, 150, 200, 0.3)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(-50, -15);
+        ctx.moveTo(0, 0); ctx.lineTo(-55, 10);
+        ctx.moveTo(0, 0); ctx.lineTo(-40, 25);
+        ctx.stroke();
+        ctx.restore();
+        // Right wing
+        ctx.save();
+        ctx.translate(80, -20);
+        ctx.rotate(0.3 - wingFlap * 0.02);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 70, 35, 0.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(100, 150, 200, 0.3)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(50, -15);
+        ctx.moveTo(0, 0); ctx.lineTo(55, 10);
+        ctx.moveTo(0, 0); ctx.lineTo(40, 25);
+        ctx.stroke();
+        ctx.restore();
+
+        // Head with gradient
+        let headGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, 100);
+        headGrad.addColorStop(0, '#444');
+        headGrad.addColorStop(0.5, '#222');
+        headGrad.addColorStop(1, '#111');
+        ctx.fillStyle = headGrad;
         ctx.beginPath();
         ctx.ellipse(0, 0, 100, 80, 0, 0, Math.PI*2);
         ctx.fill();
-        
-        // Fuzz (Simple)
-        ctx.strokeStyle = '#111';
-        ctx.lineWidth = 2;
-        for(let i=0; i<360; i+=10) {
+
+        // Fuzz (Enhanced)
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 3;
+        for(let i=0; i<360; i+=8) {
             let rad = i * (Math.PI/180);
+            let len = 15 + Math.sin(i * 0.5) * 5;
             ctx.beginPath();
-            ctx.moveTo(Math.cos(rad)*90, Math.sin(rad)*70);
-            ctx.lineTo(Math.cos(rad)*110, Math.sin(rad)*90);
+            ctx.moveTo(Math.cos(rad)*85, Math.sin(rad)*65);
+            ctx.lineTo(Math.cos(rad)*(85+len), Math.sin(rad)*(65+len*0.8));
             ctx.stroke();
         }
 
-        // Eyes (Compound)
-        ctx.fillStyle = '#a00';
+        // Eyes (Compound) - Brighter red with glow
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = '#ff0000';
+        let eyeGrad = ctx.createRadialGradient(-50, -25, 5, -50, -20, 50);
+        eyeGrad.addColorStop(0, '#ff4444');
+        eyeGrad.addColorStop(0.5, '#cc0000');
+        eyeGrad.addColorStop(1, '#880000');
+        ctx.fillStyle = eyeGrad;
         // Left Eye
         ctx.beginPath();
-        ctx.ellipse(-50, -20, 40, 50, -0.2, 0, Math.PI*2);
+        ctx.ellipse(-50, -20, 45, 55, -0.2, 0, Math.PI*2);
         ctx.fill();
         // Right Eye
+        let eyeGrad2 = ctx.createRadialGradient(50, -25, 5, 50, -20, 50);
+        eyeGrad2.addColorStop(0, '#ff4444');
+        eyeGrad2.addColorStop(0.5, '#cc0000');
+        eyeGrad2.addColorStop(1, '#880000');
+        ctx.fillStyle = eyeGrad2;
         ctx.beginPath();
-        ctx.ellipse(50, -20, 40, 50, 0.2, 0, Math.PI*2);
+        ctx.ellipse(50, -20, 45, 55, 0.2, 0, Math.PI*2);
         ctx.fill();
 
-        // Eye Highlights (Compound grid illusion)
-        ctx.fillStyle = 'rgba(255, 100, 100, 0.3)';
+        // Eye hexagon pattern (compound eye effect)
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        for(let ex = -80; ex < 0; ex += 12) {
+            for(let ey = -60; ey < 30; ey += 10) {
+                let dx = ex + 50;
+                let dy = ey + 20;
+                if(dx*dx/(40*40) + dy*dy/(50*50) < 0.85) {
+                    ctx.beginPath();
+                    ctx.arc(ex, ey, 4, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+        }
+        for(let ex = 20; ex < 100; ex += 12) {
+            for(let ey = -60; ey < 30; ey += 10) {
+                let dx = ex - 50;
+                let dy = ey + 20;
+                if(dx*dx/(40*40) + dy*dy/(50*50) < 0.85) {
+                    ctx.beginPath();
+                    ctx.arc(ex, ey, 4, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // Eye Highlights
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.beginPath();
-        ctx.ellipse(-50, -20, 30, 40, -0.2, 0, Math.PI*2);
+        ctx.ellipse(-60, -35, 15, 20, -0.3, 0, Math.PI*2);
         ctx.fill();
         ctx.beginPath();
-        ctx.ellipse(50, -20, 30, 40, 0.2, 0, Math.PI*2);
+        ctx.ellipse(40, -35, 15, 20, 0.3, 0, Math.PI*2);
+        ctx.fill();
+
+        // Antennae
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-30, -70);
+        ctx.quadraticCurveTo(-40, -100, -25, -115);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(30, -70);
+        ctx.quadraticCurveTo(40, -100, 25, -115);
+        ctx.stroke();
+        // Antennae tips
+        ctx.fillStyle = '#444';
+        ctx.beginPath();
+        ctx.ellipse(-25, -118, 8, 12, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(25, -118, 8, 12, 0, 0, Math.PI*2);
         ctx.fill();
 
         // Proboscis
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = '#2a2a2a';
         ctx.beginPath();
-        ctx.moveTo(-10, 60);
-        ctx.quadraticCurveTo(0, 120, -20, 140);
-        ctx.lineTo(20, 140);
-        ctx.quadraticCurveTo(0, 120, 10, 60);
+        ctx.moveTo(-12, 60);
+        ctx.quadraticCurveTo(-5, 100, -15, 130);
+        ctx.lineTo(15, 130);
+        ctx.quadraticCurveTo(5, 100, 12, 60);
         ctx.fill();
-        
-        // Sucker
-        ctx.fillStyle = '#555';
+
+        // Sucker with segments
+        ctx.fillStyle = '#3a3a3a';
         ctx.beginPath();
-        ctx.ellipse(0, 140, 20, 10, 0, 0, Math.PI*2);
+        ctx.ellipse(0, 135, 18, 12, 0, 0, Math.PI*2);
         ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-15, 135); ctx.lineTo(15, 135);
+        ctx.moveTo(-12, 140); ctx.lineTo(12, 140);
+        ctx.stroke();
 
         ctx.restore();
     }
@@ -1302,14 +2231,85 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawBackground();
             drawStartScreenFly();
+
+            // Draw and update menu hand
+            if (!menuHand) {
+                menuHand = new Hand();
+                menuHand.weapon = 'HAND';
+            }
+
+            // Update menu hand position
+            menuHand.targetX = input.x;
+            menuHand.targetY = input.y;
+            menuHand.x += (menuHand.targetX - menuHand.x) * 0.2;
+            menuHand.y += (menuHand.targetY - menuHand.y) * 0.2;
+            menuHand.angle = (menuHand.targetX - menuHand.x) * 0.005;
+
+            // Handle slap animation
+            if (menuHand.slapState === 'IDLE') {
+                if (input.isDown && !input.clickHandled) {
+                    menuHand.slapState = 'SLAPPING';
+                    menuHand.slapTimer = 0;
+                    input.clickHandled = true;
+                }
+            } else if (menuHand.slapState === 'SLAPPING') {
+                menuHand.slapTimer++;
+                menuHand.scale = 1 - (menuHand.slapTimer / 5) * 0.2;
+                if (menuHand.slapTimer >= 5) {
+                    // Check if hitting play button
+                    const playBtn = document.getElementById('playBtn');
+                    if (playBtn) {
+                        const rect = playBtn.getBoundingClientRect();
+                        const hitX = menuHand.x;
+                        const hitY = menuHand.y - 50;
+                        if (hitX > rect.left && hitX < rect.right && hitY > rect.top && hitY < rect.bottom) {
+                            // Hit the play button!
+                            playThwack(true);
+                            triggerScreenShake(10);
+                            initAudio();
+                            startGame();
+                            loop();
+                            return;
+                        }
+                    }
+                    menuHand.slapState = 'RECOVERING';
+                    menuHand.slapTimer = 0;
+                }
+            } else if (menuHand.slapState === 'RECOVERING') {
+                menuHand.slapTimer++;
+                menuHand.scale += 0.2;
+                if (menuHand.slapTimer >= 10) {
+                    menuHand.scale = 1;
+                    menuHand.slapState = 'IDLE';
+                }
+            }
+
+            // Draw menu hand on top canvas
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+            menuHand.draw(handCtx);
+
             requestAnimationFrame(loop);
             return;
         }
 
         if (gameState !== 'PLAYING') return;
 
+        // Clear hand canvas for game hand
+        handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
         // Modifiers
         if (freezeTimer > 0) freezeTimer--;
+
+        // Screen shake decay
+        if (screenShake.intensity > 0) {
+            screenShake.x = randomRange(-screenShake.intensity, screenShake.intensity);
+            screenShake.y = randomRange(-screenShake.intensity, screenShake.intensity);
+            screenShake.intensity *= 0.9;
+            if (screenShake.intensity < 0.5) screenShake.intensity = 0;
+        } else {
+            screenShake.x = 0;
+            screenShake.y = 0;
+        }
 
         // Timer
         let elapsed = (Date.now() - startTime) / 1000;
@@ -1318,16 +2318,28 @@
         // Update UI
         scoreDisplay.innerText = score;
         annoyanceBar.style.width = annoyance + '%';
-        
+
+        // Show debuff indicators
+        if (handDebuffs.shaky > 0 || handDebuffs.inverted > 0 || handDebuffs.delayed > 0) {
+            let debuffText = [];
+            if (handDebuffs.shaky > 0) debuffText.push('SHAKY');
+            if (handDebuffs.inverted > 0) debuffText.push('INVERTED');
+            if (handDebuffs.delayed > 0) debuffText.push('LAGGED');
+            // Visual feedback handled in hand draw
+        }
+
         // Annoyance Check
         if (annoyance >= MAX_ANNOYANCE) {
             endGame();
             return;
         }
 
-        // Spawn Logic
-        const spawnRate = Math.max(15, 100 - (score * 2)); 
-        if (frames % spawnRate === 0) {
+        // Boss Spawn Logic
+        trySpawnBoss();
+
+        // Spawn Logic (affected by time warp)
+        const spawnRate = Math.max(15, 100 - (score * 2));
+        if (frames % Math.round(spawnRate / timeWarpFactor) === 0) {
             flies.push(new Fly());
         }
 
@@ -1336,9 +2348,18 @@
             bonuses.push(new Bonus());
         }
 
-        // Clear
+        // Clear and apply screen shake
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(screenShake.x, screenShake.y);
+
         drawBackground();
+
+        // Time warp visual effect
+        if (timeWarpFactor !== 1) {
+            ctx.fillStyle = timeWarpFactor < 1 ? 'rgba(100, 150, 255, 0.1)' : 'rgba(255, 150, 100, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         // Update & Draw Splatters (Background layer)
         for (let i = splatters.length - 1; i >= 0; i--) {
@@ -1354,17 +2375,27 @@
             if (!bonuses[i].active) bonuses.splice(i, 1);
         }
 
-        // Update & Draw Flies
+        // Update & Draw Flies (apply time warp to regular flies)
         for (let i = flies.length - 1; i >= 0; i--) {
-            flies[i].update();
+            // Regular flies are affected by time warp
+            if (!flies[i].bossType || flies[i].bossType === 'EGG') {
+                for (let t = 0; t < timeWarpFactor; t++) {
+                    flies[i].update();
+                }
+            } else {
+                flies[i].update();
+            }
             flies[i].draw(ctx);
         }
-        
+
         // Hand Logic & Collision
         hand.update();
 
         // Remove dead flies
         flies = flies.filter(f => !f.isDead);
+
+        // Update buzz volume based on fly count
+        updateBuzzVolume();
 
         // Update & Draw Particles
         for (let i = particles.length - 1; i >= 0; i--) {
@@ -1373,17 +2404,34 @@
             if (particles[i].life <= 0) particles.splice(i, 1);
         }
 
-        // Draw Hand (Foreground)
-        hand.draw(ctx);
+        // Draw Hand on top canvas (Foreground)
+        hand.draw(handCtx);
+
+        // Draw debuff indicators on screen
+        if (handDebuffs.shaky > 0 || handDebuffs.inverted > 0 || handDebuffs.delayed > 0) {
+            ctx.font = 'bold 16px Fredoka One';
+            ctx.textAlign = 'center';
+            let yOff = canvas.height - 50;
+            if (handDebuffs.shaky > 0) {
+                ctx.fillStyle = '#9b59b6';
+                ctx.fillText('SHAKY! ' + Math.ceil(handDebuffs.shaky / 60) + 's', canvas.width/2 - 80, yOff);
+            }
+            if (handDebuffs.inverted > 0) {
+                ctx.fillStyle = '#3498db';
+                ctx.fillText('INVERTED! ' + Math.ceil(handDebuffs.inverted / 60) + 's', canvas.width/2, yOff);
+            }
+            if (handDebuffs.delayed > 0) {
+                ctx.fillStyle = '#f39c12';
+                ctx.fillText('LAGGED! ' + Math.ceil(handDebuffs.delayed / 60) + 's', canvas.width/2 + 80, yOff);
+            }
+        }
+
+        ctx.restore(); // End screen shake transform
 
         requestAnimationFrame(loop);
     }
 
-    // Buttons
-    startBtn.addEventListener('click', () => {
-        startGame();
-        loop(); // Start loop logic
-    });
+    // Buttons (play is handled by hand slap in start screen)
     restartBtn.addEventListener('click', () => {
         startGame();
         loop();
